@@ -1,0 +1,1523 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>Tablero de riesgo</title>
+<style>
+  :root {
+    color-scheme: light;
+    --fondo: #e4ebe8; --marco: #f4f7f6; --sup: #ffffff; --texto: #13211f; --suave: #55645f; --mudo: #7f8c88;
+    --rej: #e8edeb; --eje: #c9d2cf; --borde: #e2e8e5; --wash: rgba(15, 47, 45, .05);
+    --lat: #0f2f2d; --lat-txt: #93b4ac; --lat-act: #c6da52;
+    --oscuro: #12302e; --oscuro-2: #1b3f3c; --oscuro-txt: #e9f2ef; --oscuro-suave: #a9c3bc;
+    --lima: #a6bd2d; --lima-txt: #1d2a0b; --lima-suave: #eef4d2; --violeta: #6460dc; --violeta-suave: #ecebfc;
+    --s1: #00988b; --s2: #9cb22a; --s3: #6460dc;
+    --ok: #0ca30c; --aviso: #fab219; --serio: #ec835a; --critico: #d03b3b;
+    --sombra: 0 1px 2px rgba(15, 47, 45, .05), 0 10px 28px rgba(15, 47, 45, .07);
+    --radio: 18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --fondo: #050908; --marco: #0d1413; --sup: #18211f; --texto: #e6eeeb; --suave: #a7b6b1; --mudo: #7d8b87;
+      --rej: #25302d; --eje: #36423f; --borde: #233230; --wash: rgba(255, 255, 255, .05);
+      --lat: #081b19; --lat-txt: #7fa198; --lat-act: #c6da52;
+      --oscuro: #0e2725; --oscuro-2: #173a37; --oscuro-txt: #e9f2ef; --oscuro-suave: #9fbab3;
+      --lima: #b3c93e; --lima-txt: #1d2a0b; --lima-suave: #263117; --violeta: #8a83f0; --violeta-suave: #25233f;
+      --s1: #00909a; --s2: #8a9b1e; --s3: #807af0;
+      --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .25);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --fondo: #050908; --marco: #0d1413; --sup: #18211f; --texto: #e6eeeb; --suave: #a7b6b1; --mudo: #7d8b87;
+    --rej: #25302d; --eje: #36423f; --borde: #233230; --wash: rgba(255, 255, 255, .05);
+    --lat: #081b19; --lat-txt: #7fa198; --lat-act: #c6da52;
+    --oscuro: #0e2725; --oscuro-2: #173a37; --oscuro-txt: #e9f2ef; --oscuro-suave: #9fbab3;
+    --lima: #b3c93e; --lima-txt: #1d2a0b; --lima-suave: #263117; --violeta: #8a83f0; --violeta-suave: #25233f;
+    --s1: #00909a; --s2: #8a9b1e; --s3: #807af0;
+    --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .25);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; color: var(--texto); font-size: 15px; line-height: 1.45;
+    font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif; }
+  body { background: radial-gradient(1200px 600px at 85% -10%, color-mix(in srgb, var(--s1) 14%, transparent), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, color-mix(in srgb, var(--s3) 10%, transparent), transparent 60%), var(--fondo);
+    min-height: 100vh; overflow-x: hidden; }
+  a { color: var(--s1); }
+  svg.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* ---------- marco: barra lateral + cuerpo ---------- */
+  .marco { display: flex; max-width: 1480px; margin: 16px auto; min-height: calc(100vh - 32px); background: var(--marco);
+    border-radius: 26px; box-shadow: 0 30px 80px rgba(15, 47, 45, .14); overflow: hidden; }
+  .lateral { width: 92px; flex: none; background: var(--lat); padding: 18px 0; }
+  .lat-int { position: sticky; top: 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .logo { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 18px;
+    background: radial-gradient(circle at 30% 30%, #2f6f68, #134440); color: var(--lat-act); box-shadow: inset 0 0 0 2px rgba(198, 218, 82, .35); }
+  .logo svg.ic { width: 24px; height: 24px; }
+  .nav { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 0 10px; }
+  .nav-it { appearance: none; border: 0; background: none; color: var(--lat-txt); font: inherit; cursor: pointer; width: 100%;
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 2px; border-radius: 14px; position: relative; }
+  .nav-it span { font-size: 10.5px; letter-spacing: .01em; }
+  .nav-it:hover { color: #d9e8e3; background: rgba(255, 255, 255, .05); }
+  .nav-it[aria-selected="true"] { color: var(--lat-act); background: rgba(198, 218, 82, .12); }
+  .nav-it[aria-selected="true"]::before { content: ""; position: absolute; left: -10px; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--lat-act); }
+  .nav-it .cnt { position: absolute; top: 4px; right: 10px; min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 10px; line-height: 16px;
+    background: var(--critico); color: #fff; font-weight: 700; }
+  .cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+  header.cab { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-start; justify-content: space-between; padding: 26px 30px 6px; }
+  .sup { margin: 0 0 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--mudo); }
+  h1 { margin: 0; font-size: clamp(20px, 2.3vw, 28px); line-height: 1.2; color: var(--texto); font-weight: 700; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+  .trazos { display: inline-flex; gap: 6px; align-items: center; }
+  .trazos i { display: block; height: 5px; border-radius: 3px; background: var(--lima); width: 34px; }
+  .trazos i + i { width: 18px; background: var(--eje); }
+  .sub { margin: 6px 0 0; font-size: 13px; color: var(--suave); }
+  .acc { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 9px 16px; font: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--borde); background: var(--sup); color: var(--texto); text-decoration: none; cursor: pointer; white-space: nowrap; }
+  .pill.oscura { background: var(--oscuro); border-color: var(--oscuro); color: var(--oscuro-txt); }
+  .pill.lima { background: var(--lima); border-color: var(--lima); color: var(--lima-txt); }
+  .pill.violeta { background: var(--violeta); border-color: var(--violeta); color: #fff; }
+  .pill:hover { filter: brightness(1.05); }
+
+  main { padding: 16px 30px 10px; }
+  section.vista { display: none; }
+  section.vista.activa { display: block; animation: aparecer .25s ease; }
+  @keyframes aparecer { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  h2 { margin: 28px 0 4px; font-size: 17px; color: var(--texto); font-weight: 700; }
+  h2:first-child { margin-top: 4px; }
+  h3 { margin: 0 0 4px; font-size: 15px; color: var(--texto); font-weight: 650; }
+  p.nota { margin: 0 0 12px; font-size: 13px; color: var(--suave); max-width: 920px; }
+  ul.nota { margin: 10px 0 8px; padding-left: 20px; font-size: 13px; color: var(--suave); max-width: 920px; }
+  ul.nota li { margin: 3px 0; }
+  .tarjeta { background: var(--sup); border-radius: var(--radio); padding: 18px; margin: 0 0 16px; min-width: 0; box-shadow: var(--sombra); }
+  .tarjeta > p.nota:last-child { margin-bottom: 0; }
+  .g12 { display: grid; gap: 16px; grid-template-columns: repeat(12, minmax(0, 1fr)); margin-bottom: 16px; }
+  .g12 > * { margin: 0; }
+  .c3 { grid-column: span 3; } .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+  @media (max-width: 1280px) { .c3 { grid-column: span 6; } .c4, .c8, .c5, .c7 { grid-column: span 12; } }
+  @media (max-width: 680px) { .c3 { grid-column: span 12; } }
+  .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); margin-bottom: 16px; }
+  .kpi { background: var(--sup); border-radius: 14px; padding: 14px 16px; min-width: 0; box-shadow: var(--sombra); }
+  .kpi .et { font-size: 12.5px; color: var(--suave); }
+  .kpi .va { font-size: 24px; font-weight: 700; line-height: 1.2; margin: 3px 0 2px; overflow-wrap: anywhere; }
+  .kpi .de { font-size: 12px; color: var(--mudo); }
+
+  /* ---------- tarjetas destacadas ---------- */
+  .plan { position: relative; background: var(--sup); border-radius: 22px; padding: 18px 18px 16px; box-shadow: var(--sombra); display: flex; flex-direction: column;
+    gap: 10px; min-height: 250px; overflow: hidden; }
+  .plan header { display: flex; align-items: center; gap: 10px; }
+  .plan .ico { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--lima-suave); color: #6c7c12; }
+  .plan.violeta .ico { background: var(--violeta-suave); color: var(--violeta); }
+  .plan h3 { margin: 0; font-size: 17px; }
+  .plan .chip { margin-left: auto; font-size: 10.5px; letter-spacing: .03em; padding: 3px 8px; border-radius: 999px; background: var(--wash); color: var(--suave); white-space: nowrap; }
+  .plan .valor { font-size: clamp(24px, 2.4vw, 32px); font-weight: 750; line-height: 1.1; margin-top: 4px; }
+  .plan .sub2 { font-size: 12.5px; color: var(--suave); margin-top: -4px; }
+  .plan ul { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 7px; font-size: 13px; color: var(--suave); }
+  .plan li { display: flex; gap: 9px; align-items: baseline; }
+  .plan li i { width: 8px; height: 8px; border-radius: 50%; flex: none; transform: translateY(-1px); }
+  .plan .pie { margin-top: auto; display: flex; align-items: flex-end; justify-content: flex-start; gap: 10px; }
+  .plan.oscuro { background: linear-gradient(160deg, var(--oscuro-2), var(--oscuro) 55%); color: var(--oscuro-txt); }
+  .plan.oscuro h3 { color: var(--oscuro-txt); }
+  .plan.oscuro .ico { background: rgba(255, 255, 255, .08); color: var(--lat-act); }
+  .plan.oscuro .sub2, .plan.oscuro ul { color: var(--oscuro-suave); }
+  .plan.oscuro .chip { background: rgba(255, 255, 255, .1); color: var(--oscuro-suave); }
+  .plan.oscuro .pill { background: #0a1f1d; border-color: #2c5551; color: var(--oscuro-txt); }
+
+  /* ---------- patrones y calidad ---------- */
+  ul.hallazgos { margin: 0; padding: 0; list-style: none; }
+  ul.hallazgos li { padding: 12px 0; border-top: 1px solid var(--rej); display: grid; grid-template-columns: 74px 1fr; gap: 10px; align-items: start; }
+  ul.hallazgos li:first-child { border-top: 0; padding-top: 2px; }
+  ul.hallazgos .txt { font-size: 13.5px; color: var(--suave); }
+  ul.hallazgos .txt b.t { display: block; color: var(--texto); font-size: 14px; margin-bottom: 2px; }
+  ul.hallazgos .txt a { white-space: nowrap; font-size: 13px; font-weight: 600; margin-left: 4px; }
+  ul.hallazgos .txt ul { margin: 4px 0 6px; padding-left: 18px; display: grid; gap: 3px; }
+  ul.hallazgos .txt ul li { display: list-item; padding: 0; border: 0; }
+  .nivel { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 650; white-space: nowrap; }
+  .nivel i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .nivel.Alta i { background: var(--critico); border-radius: 2px; transform: rotate(45deg); }
+  .nivel.Media i { background: var(--serio); }
+  .nivel.Baja i { background: var(--aviso); border-radius: 2px; }
+  .nivel.Info i { background: var(--s1); }
+  .calidad { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+  .calidad h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 8px; }
+  .calidad h3 svg.ic { width: 18px; height: 18px; }
+  .calidad ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; font-size: 13px; color: var(--suave); }
+  .calidad li b { display: block; color: var(--texto); font-weight: 650; }
+  .canal, .zona { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .canal i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .canal.V i { background: var(--ok); } .canal.D i { background: var(--serio); } .canal.F i { background: var(--critico); }
+  .zona i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+  .etq { display: inline-block; margin: 1px 3px 1px 0; padding: 0 7px; border-radius: 999px; font-size: 11.5px; line-height: 19px;
+    background: var(--wash); color: var(--suave); white-space: nowrap; }
+  .etq.alerta { background: color-mix(in srgb, var(--critico) 13%, transparent); color: var(--texto); }
+  .etq.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--texto); }
+  .etq.pend { background: color-mix(in srgb, var(--aviso) 22%, transparent); color: var(--texto); }
+
+  /* ---------- barra segmentada y leyendas ---------- */
+  .leyenda { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 10px; font-size: 12.5px; color: var(--suave); }
+  .leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+  .leyenda .sw { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+  .seg { display: flex; gap: 2px; height: 28px; margin: 6px 0 10px; }
+  .seg-b { border-radius: 6px; min-width: 3px; color: #fff; font-size: 12px; font-weight: 650; line-height: 28px; padding-left: 8px; white-space: nowrap; overflow: hidden; }
+  .copiar { appearance: none; border: 1px solid var(--borde); background: var(--marco); color: var(--texto); border-radius: 8px; padding: 1px 7px;
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; cursor: copy; margin: 1px 3px 1px 0; white-space: nowrap; }
+  .copiar:hover { border-color: var(--s1); }
+  .copiar.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+  .copiar.ok::after { content: " ✓"; color: var(--ok); }
+  .mks { display: inline-flex; gap: 4px; flex-wrap: wrap; min-width: 84px; }
+  .mk { width: 24px; height: 24px; border-radius: 7px; display: inline-grid; place-items: center; flex: none;
+    background: color-mix(in srgb, currentColor 13%, transparent); }
+  .mk svg.ic { width: 15px; height: 15px; stroke-width: 2; }
+  details.leyenda-mk { margin: 0 0 12px; font-size: 12.5px; color: var(--suave); }
+  details.leyenda-mk summary { cursor: pointer; font-weight: 600; }
+  .leyenda-mk .items { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
+  .leyenda-mk span.it { display: inline-flex; align-items: center; gap: 6px; }
+  .igv-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; font-size: 10.5px; font-weight: 750; line-height: 18px;
+    color: var(--critico); background: color-mix(in srgb, var(--critico) 13%, transparent); vertical-align: 1px; }
+
+  /* ---------- fichas desplegables ---------- */
+  tr.fila-det { cursor: pointer; }
+  tr.fila-det > td:first-child { white-space: nowrap; }
+  tr.fila-det td:first-child::before { content: "▸"; display: inline-block; width: 14px; color: var(--mudo); transition: transform .15s; }
+  tr.fila-det[aria-expanded="true"] td:first-child::before { transform: rotate(90deg); }
+  tr.fila-det[aria-expanded="true"] > td { background: var(--wash); border-bottom-color: transparent; }
+  tr.fila-det:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
+  tr.detalle > td { padding: 0; background: var(--marco); cursor: default; }
+  tr.grupo { cursor: pointer; }
+  tr.grupo > td { padding: 0; background: color-mix(in srgb, var(--marco) 70%, var(--sup)); border-bottom: 1px solid var(--eje); }
+  tr.grupo:hover > td { background: var(--wash); }
+  tr.grupo:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
+  .cab-g { position: sticky; left: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 10px 12px; font-size: 13px; }
+  .cab-g .fl-g { color: var(--mudo); transition: transform .15s; display: inline-block; width: 12px; }
+  tr.grupo[aria-expanded="true"] .fl-g { transform: rotate(90deg); }
+  .cab-g b.g { font-size: 14px; }
+  .cab-g .sub-g { color: var(--suave); }
+  .cab-g .der { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+  .barra-tabla select.agrupar { font-weight: 650; border-color: var(--s1); }
+  tr.detalle:hover { background: none; }
+  .ficha { padding: 14px 16px 18px; display: grid; gap: 12px; position: sticky; left: 0; }
+  .ficha-acc { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; }
+  .ficha-acc .et { color: var(--suave); }
+  .bloques { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+  .bloque { background: var(--sup); border-radius: 14px; padding: 12px 14px; font-size: 13px; box-shadow: var(--sombra); min-width: 0; }
+  .bloque h4 { margin: 0 0 8px; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--mudo); display: flex; align-items: center; gap: 6px; }
+  .bloque h4 svg.ic { width: 16px; height: 16px; }
+  .bloque dl { margin: 0; display: grid; grid-template-columns: minmax(90px, max-content) 1fr; gap: 4px 12px; }
+  .bloque dt { color: var(--suave); }
+  .bloque dd { margin: 0; overflow-wrap: anywhere; }
+  .bloque dd .etq, .bloque li .etq { white-space: normal; }
+  .bloque p { margin: 6px 0 0; color: var(--suave); }
+  .bloque ol, .bloque ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+  .bloque.alerta { box-shadow: inset 3px 0 0 var(--critico), var(--sombra); }
+  .bloque.ok { box-shadow: inset 3px 0 0 var(--ok), var(--sombra); }
+  .bloque.pend { box-shadow: inset 3px 0 0 var(--aviso), var(--sombra); }
+  .bloque.ancho { grid-column: 1 / -1; }
+  .paso-c { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+  .paso-c .fl { color: var(--mudo); }
+  .guias { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 10px; }
+  .guia { border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+  .guia.baja { opacity: .78; border-style: dashed; }
+  .bloque .mudo { color: var(--suave); font-size: 12.5px; }
+  .guia .bienes { font-size: 12.5px; background: color-mix(in srgb, var(--mudo) 8%, transparent); border-radius: 6px; padding: 4px 6px; }
+  .btn.mini { font-size: 12px; padding: 4px 10px; gap: 4px; }
+  .btn.mini svg.ic { width: 14px; height: 14px; }
+  .paso-c .ver-g { margin-left: auto; }
+
+  /* ---------- tablas ---------- */
+  .barra-tabla { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; }
+  .barra-tabla input[type=search], .barra-tabla select { font: inherit; font-size: 14px; padding: 8px 12px; border: 1px solid var(--borde);
+    border-radius: 999px; background: var(--marco); color: var(--texto); min-width: 0; }
+  .barra-tabla input[type=search] { flex: 1 1 200px; }
+  .barra-tabla select { flex: 0 1 auto; max-width: 100%; }
+  .barra-tabla .cuenta { font-size: 12.5px; color: var(--mudo); margin-left: auto; }
+  .btn { appearance: none; font: inherit; font-size: 13px; font-weight: 650; padding: 8px 14px; border-radius: 999px; cursor: pointer;
+    background: var(--oscuro); color: var(--oscuro-txt); border: 0; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { filter: brightness(1.15); }
+  .btn.principal { background: var(--lima); color: var(--lima-txt); }
+  .btn.claro { background: var(--marco); color: var(--texto); border: 1px solid var(--borde); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn svg.ic { width: 16px; height: 16px; }
+  .envoltura { overflow-x: auto; max-width: 100%; border-radius: 12px; border: 1px solid var(--rej); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--rej); vertical-align: top; }
+  th { position: sticky; top: 0; background: var(--marco); font-size: 12px; color: var(--suave); font-weight: 650; cursor: pointer; white-space: nowrap; user-select: none; }
+  th[aria-sort="ascending"]::after { content: " ▲"; font-size: 9px; }
+  th[aria-sort="descending"]::after { content: " ▼"; font-size: 9px; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.c { white-space: nowrap; }
+  td.largo { min-width: 150px; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--wash); }
+  .mas { margin-top: 10px; }
+  details.bandeja { margin-bottom: 16px; }
+  details.bandeja > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+  details.bandeja > summary::-webkit-details-marker { display: none; }
+  details.bandeja > summary::after { content: "▾"; margin-left: auto; color: var(--mudo); transition: transform .2s; }
+  details.bandeja[open] > summary::after { transform: rotate(180deg); }
+  details.bandeja > summary h3 { margin: 0; }
+  details.bandeja .dentro { margin-top: 12px; }
+  .traslados { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+
+  /* ---------- candado ---------- */
+  #candado { display: grid; place-items: center; min-height: 60vh; }
+  #candado .tarjeta { max-width: 520px; width: 100%; padding: 26px; }
+  #candado form { display: grid; gap: 10px; margin-top: 8px; }
+  #candado label { font-size: 14px; font-weight: 650; }
+  #candado input { font: inherit; font-size: 16px; padding: 12px 16px; border: 1px solid var(--borde); border-radius: 999px; background: var(--marco); color: var(--texto); }
+  #candado .error { color: var(--critico); font-size: 13.5px; min-height: 1.2em; margin: 0; }
+  footer { padding: 8px 30px 26px; font-size: 11.5px; color: var(--mudo); }
+  .cargando { opacity: .6; pointer-events: none; }
+
+  /* ---------- móvil: la barra lateral pasa abajo ---------- */
+  @media (max-width: 760px) {
+    .marco { margin: 0; border-radius: 0; min-height: 100vh; box-shadow: none; display: block; }
+    .lateral { position: fixed; z-index: 20; left: 0; right: 0; bottom: 0; width: auto;
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,.18); }
+    .lat-int { position: static; flex-direction: row; }
+    .lateral .logo { display: none; }
+    .nav { flex-direction: row; padding: 0; gap: 2px; }
+    .nav-it { padding: 6px 2px; border-radius: 12px; }
+    .nav-it[aria-selected="true"]::before { left: 20%; right: 20%; top: -6px; bottom: auto; width: auto; height: 3px; border-radius: 0 0 3px 3px; }
+    .nav-it .cnt { right: 6px; }
+    .lateral:not(:has(.nav:not([hidden]))) { display: none; }
+    header.cab { padding: 16px 14px 4px; }
+    main { padding: 10px 12px; }
+    footer { padding: 0 14px 96px; }
+    .tarjeta { padding: 14px; }
+    ul.hallazgos li { grid-template-columns: 1fr; gap: 3px; }
+    .plan { min-height: 0; }
+    .bloque dl { grid-template-columns: 1fr; gap: 0 0; }
+    .bloque dd { margin-bottom: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="marco">
+  <aside class="lateral" aria-label="Navegación">
+    <div class="lat-int">
+    <div class="logo" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2.5l7.5 3.2v5.6c0 4.8-3.2 8.6-7.5 10.2-4.3-1.6-7.5-5.4-7.5-10.2V5.7z"/><path d="M8.7 12.2l2.3 2.3 4.4-4.6"/></svg></div>
+    <nav class="nav" id="pestanas" role="tablist" aria-label="Secciones del tablero" hidden></nav>
+    </div>
+  </aside>
+  <div class="cuerpo">
+    <header class="cab">
+      <div>
+        <p class="sup">SUNAT · Intendencia de Aduana de Tarapoto · Equipo de Gestión de Riesgo</p>
+        <h1><span id="titulo">Tablero de gestión de riesgo</span><span class="trazos" aria-hidden="true"><i></i><i></i></span></h1>
+        <p class="sub" id="sub">Acceso restringido</p>
+      </div>
+      <div class="acc" id="acc"></div>
+    </header>
+
+    <main id="candado">
+      <div class="tarjeta">
+        <h2>Acceso restringido</h2>
+        <p class="nota">Este tablero contiene información con reserva tributaria y está cifrado (AES-256-GCM). Ingrese la clave de acceso entregada al equipo. La clave no se envía a ningún servidor: el descifrado se hace en este navegador.</p>
+        <form id="form-clave" autocomplete="off">
+          <label for="clave">Clave de acceso</label>
+          <input id="clave" type="password" required autocomplete="off" spellcheck="false">
+          <p class="error" id="error" role="alert"></p>
+          <div><button class="btn principal" type="submit" id="abrir">Abrir tablero</button></div>
+        </form>
+      </div>
+    </main>
+
+    <main id="app" hidden></main>
+
+    <footer id="pie">Uso interno. Información sujeta a reserva tributaria (art. 85 del Código Tributario). Los casos son indicios para el análisis de riesgo, no conclusiones.</footer>
+  </div>
+</div>
+
+<script id="cifrado" type="application/json">__CIFRADO__</script>
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "html") n.innerHTML = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null) n.append(k.nodeType ? k : document.createTextNode(k));
+  return n;
+}
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const sinTilde = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/* ---------- formatos ---------- */
+const NF0 = new Intl.NumberFormat("es-PE", { maximumFractionDigits: 0 });
+const NF2 = new Intl.NumberFormat("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const NF3 = new Intl.NumberFormat("es-PE", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const NFC = new Intl.NumberFormat("es-PE", { notation: "compact", maximumFractionDigits: 1 });
+const f0 = v => v == null ? "–" : NF0.format(v);
+const f2 = v => v == null ? "–" : NF2.format(v);
+const fc = v => v == null ? "–" : NFC.format(v);
+const pc = v => v == null || !isFinite(v) ? "–" : NF0.format(v) + " %";
+const mon = m => m === "PEN" ? "S/" : m === "USD" ? "USD" : (m || "");
+const din = (m, v, dec = 2) => v == null ? "–" : `${mon(m)} ${dec ? f2(v) : f0(v)}`.trim();
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
+const mesLargo = m => MESES[+m.slice(5, 7) - 1] + " " + m.slice(0, 4);
+const fecha = d => d ? d.slice(8, 10) + "/" + d.slice(5, 7) + "/" + d.slice(0, 4) : "–";
+const NIVEL = n => `<span class="nivel ${esc(n)}"><i aria-hidden="true"></i>${n === "Info" ? "Dato" : esc(n)}</span>`;
+const ORDEN_N = { Alta: 0, Media: 1, Baja: 2 };
+let D = null, IDX = null;
+
+/* ---------- descifrado ---------- */
+function leerCarga() {
+  try { const p = JSON.parse($("#cifrado").textContent); return p && p.c ? p : null; } catch (e) { return null; }
+}
+const CARGA = leerCarga();
+const normalizarClave = s => s.normalize("NFKC").replace(/[‐-―−]/g, "-").replace(/\s+/g, "");
+async function descifrar(clave) {
+  const p = CARGA;
+  const b = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(clave), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b(p.s), iterations: p.it, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const plano = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b(p.i) }, key, b(p.c));
+  const flujo = new Blob([plano]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(flujo).text());
+}
+if (!CARGA) {
+  $("#error").textContent = "Este archivo es la plantilla y no contiene datos. Abra la página publicada o el archivo riesgo/index.html de la rama gh-pages.";
+  $("#clave").disabled = true; $("#abrir").disabled = true;
+}
+$("#form-clave").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const f = ev.currentTarget, err = $("#error");
+  err.textContent = "";
+  f.classList.add("cargando"); $("#abrir").textContent = "Descifrando…";
+  try {
+    D = await descifrar(normalizarClave($("#clave").value));
+  } catch (e) {
+    err.textContent = (window.crypto && crypto.subtle && window.DecompressionStream)
+      ? "Clave incorrecta. Revise mayúsculas, minúsculas y guiones."
+      : "Este navegador no permite descifrar el tablero. Use una versión reciente de Chrome, Edge, Firefox o Safari.";
+    f.classList.remove("cargando"); $("#abrir").textContent = "Abrir tablero";
+    return;
+  }
+  $("#clave").value = "";
+  $("#candado").remove();
+  iniciar();
+});
+
+/* ---------- íconos ---------- */
+const ICONOS = {
+  resumen: '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/>',
+  alertas: '<path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5M12 17.4v.1"/>',
+  maquinas: '<path d="M2.5 6.5h11v9h-11z"/><path d="M13.5 9.5h4l3 3.2v2.8h-7z"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/>',
+  clientes: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c.8-3.4 3.2-5.2 6-5.2s5.2 1.8 6 5.2"/><path d="M15.5 4.9a3.2 3.2 0 0 1 0 6.2M18 14.9c1.6.7 2.6 2.4 3 5.1"/>',
+  ventas: '<path d="M6 2.8h12v18.4l-3-1.8-3 1.8-3-1.8-3 1.8z"/><path d="M9 7.5h6M9 11h6M9 14.5h3.5"/>',
+  importaciones: '<path d="M20.5 7.5L12 3 3.5 7.5 12 12z"/><path d="M3.5 7.5v9L12 21l8.5-4.5v-9"/><path d="M12 12v9"/>',
+  candado: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+  calendario: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
+  escudo: '<path d="M12 2.5l7.5 3.2v5.6c0 4.8-3.2 8.6-7.5 10.2-4.3-1.6-7.5-5.4-7.5-10.2V5.7z"/><path d="M8.7 12.2l2.3 2.3 4.4-4.6"/>',
+  check: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.2l2.3 2.3 4.5-4.7"/>',
+  limite: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5.2M12 16v.1"/>',
+  equis: '<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  pct: '<path d="M18.5 5.5l-13 13"/><circle cx="7" cy="7" r="2.4"/><circle cx="17" cy="17" r="2.4"/>',
+  globo: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/>',
+  edificio: '<path d="M3 21h18M5 21V10l7-5 7 5v11"/><path d="M9.5 21v-5.5h5V21"/>',
+  persona: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20.5c1-3.6 3.8-5.6 7-5.6s6 2 7 5.6"/>',
+  doc: '<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5"/><path d="M9 14.5l2 2 4-4"/>',
+  docx: '<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5"/><path d="M9.5 12.5l5 5M14.5 12.5l-5 5"/>',
+  enlace: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  salida: '<path d="M12 15V3.5M7.5 8l4.5-4.5L16.5 8"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
+  reventa: '<path d="M4 8.5h14.5l-3.5-3.5"/><path d="M20 15.5H5.5L9 19"/>',
+  reloj: '<path d="M6.5 3h11M6.5 21h11"/><path d="M7.5 3c0 4.5 4.5 5.5 4.5 9s-4.5 4.5-4.5 9M16.5 3c0 4.5-4.5 5.5-4.5 9s4.5 4.5 4.5 9"/>',
+  pausa: '<circle cx="12" cy="12" r="8.5"/><path d="M10 9v6M14 9v6"/>',
+  lupax: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M8.3 8.3l4.4 4.4M12.7 8.3l-4.4 4.4"/>',
+  devol: '<path d="M9 14L4.5 9.5 9 5"/><path d="M4.5 9.5H15a5 5 0 0 1 0 10h-3"/>',
+  camion: '<path d="M2.5 6.5h11v9h-11z"/><path d="M13.5 9.5h4l3 3.2v2.8h-7z"/><path d="M16 4l3 2.5-3 2.5"/>',
+  ruta: '<circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8.2 18h6.3a3 3 0 0 0 0-6h-5a3 3 0 0 1 0-6h6.3"/>',
+  almacen: '<path d="M3 20.5V9l9-5.5L21 9v11.5"/><path d="M7 20.5v-8h10v8M7 16h10"/>',
+  nuevo: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18.5 16v4M16.5 18h4"/>',
+  abrir: '<path d="M14 4.5h5.5V10"/><path d="M19.5 4.5L11 13"/><path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>',
+  descarga: '<path d="M12 3.5V15M7.5 10.5L12 15l4.5-4.5"/><path d="M5 17v2.5h14V17"/>',
+  mudanza: '<path d="M7 18.5s-4-3.4-4-6.7a4 4 0 0 1 8 0c0 3.3-4 6.7-4 6.7z"/><circle cx="7" cy="11.8" r="1.3"/><path d="M13 8.5h7.5M17.5 5.5l3 3-3 3"/>',
+};
+const ic = k => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONOS[k] || ""}</svg>`;
+
+/* Barra segmentada (una totalidad repartida en partes) */
+function leyenda(items) {
+  return el("div", { class: "leyenda" }, items.map(it => el("span", {}, el("i", { class: "sw", style: `background:${it.c}`, "aria-hidden": "true" }), it.t)));
+}
+function segmentada(host, partes, fv) {
+  const tot = partes.reduce((a, p) => a + p.v, 0) || 1;
+  const bar = el("div", { class: "seg", role: "img", "aria-label": partes.map(p => `${p.t}: ${fv(p.v)} (${pc(p.v / tot * 100)})`).join("; ") });
+  for (const p of partes) {
+    if (!(p.v > 0)) continue;
+    const sh = p.v / tot;
+    const b = el("div", { class: "seg-b", style: `flex:${sh} 1 0;background:${p.c};${/--s2|--aviso|--lima/.test(p.c) ? "color:#1d2a0b" : ""}`, title: `${p.t}: ${fv(p.v)} · ${pc(sh * 100)}` });
+    if (sh >= 0.07) b.textContent = fv(p.v);
+    bar.append(b);
+  }
+  host.append(bar, leyenda(partes.map(p => ({ t: `${p.t}: ${fv(p.v)}`, c: p.c }))));
+}
+
+/* ---------- tabla con búsqueda, filtros, orden, CSV y ficha desplegable ---------- */
+function tabla(host, o) {
+  const cols = o.cols, porPag = o.porPag || 15, grupos = o.grupos || [];
+  let filas = o.filas.slice(), orden = o.orden || null, mostrar = porPag, q = "", grupo = null, claves = [];
+  const abiertos = new Set(), gAbiertos = new Set();
+  const filtros = (o.filtros || []).map(f => ({ ...f, val: "" }));
+  const barraT = el("div", { class: "barra-tabla" });
+  const memoria = o.id ? "tablero-agrupar-" + o.id : null;
+  let selG = null, todos = null, inp = null;
+  if (grupos.length) {
+    selG = el("select", { class: "agrupar", "aria-label": "Agrupar por" }, el("option", { value: "" }, "Agrupar por: nada"),
+      grupos.map(g => el("option", { value: g.id }, "Agrupar por: " + g.t)));
+    selG.addEventListener("change", () => usarGrupo(selG.value));
+    barraT.append(selG);
+  }
+  if (o.buscar !== false) {
+    inp = el("input", { type: "search", placeholder: o.ph || "Buscar…", "aria-label": "Buscar en la tabla" });
+    inp.addEventListener("input", () => { q = sinTilde(inp.value.trim()); mostrar = porPag; pintar(); });
+    barraT.append(inp);
+  }
+  for (const f of filtros) {
+    const opciones = f.opciones || [...new Set(o.filas.flatMap(r => [].concat(f.valor(r))))].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "es"));
+    const sel = el("select", { "aria-label": f.t }, el("option", { value: "" }, f.t + ": todos"), opciones.map(v => el("option", { value: v }, v)));
+    sel.addEventListener("change", () => { f.val = sel.value; mostrar = porPag; pintar(); });
+    f.sel = sel; barraT.append(sel);
+  }
+  const cuenta = el("span", { class: "cuenta" });
+  if (grupos.length) {
+    todos = el("button", { class: "btn claro", type: "button", hidden: true, onclick: () => {
+      const abrir = !claves.every(k => gAbiertos.has(k)); claves.forEach(k => abrir ? gAbiertos.add(k) : gAbiertos.delete(k)); pintar(); } }, "Abrir todos");
+    barraT.append(todos);
+  }
+  barraT.append(cuenta, el("button", { class: "btn", type: "button", onclick: () => descargar(), title: "Descargar las filas filtradas en CSV" }, "CSV"));
+  const tbl = el("table"), thead = el("thead"), tbody = el("tbody"), trh = el("tr");
+  cols.forEach((c, i) => {
+    if (c.oculta) return;
+    const th = el("th", { class: c.n ? "n" : null, scope: "col", tabindex: "0", title: c.ayuda || null }, c.t);
+    const ord = () => { orden = orden && orden.i === i ? { i, d: -orden.d } : { i, d: c.n ? -1 : 1 }; pintar(); };
+    th.addEventListener("click", ord); th.addEventListener("keydown", e => { if (e.key === "Enter") ord(); });
+    trh.append(th);
+  });
+  thead.append(trh); tbl.append(thead, tbody);
+  const mas = el("button", { class: "btn mas", type: "button", onclick: () => { mostrar += porPag * 4; pintar(); } }, "Mostrar más");
+  const env = el("div", { class: "envoltura" }, tbl);
+  host.append(barraT, env, mas);
+  const vis = cols.filter(c => !c.oculta);
+  const valor = (c, r) => c.v ? c.v(r) : r[c.k];
+  const texto = r => sinTilde(cols.map(c => c.csv ? c.csv(r) : valor(c, r)).join(" ") + " " + (o.extraBusqueda ? o.extraBusqueda(r) : ""));
+  const indice = new Map(o.filas.map(r => [r, texto(r)]));
+  const filtradas = () => filas.filter(r => (!q || indice.get(r).includes(q)) && filtros.every(f => !f.val || [].concat(f.valor(r)).includes(f.val)));
+  const ancho = () => Math.max(260, env.clientWidth - 2) + "px";
+  const ajustar = n => { n.style.width = ancho(); return n; };
+  const filaDet = r => el("tr", { class: "detalle" }, el("td", { colspan: vis.length }, ajustar(o.detalle(r))));
+  window.addEventListener("resize", () => $$(":scope > tbody > tr > td > .ficha, :scope > tbody > tr > td > .cab-g", tbl).forEach(ajustar));
+  const claveDe = r => String(grupo.clave(r) ?? "");
+  function filaDatos(r) {
+    const tr = el("tr", {}, vis.map(c => {
+      const v = valor(c, r), td = el("td", { class: c.n ? "n" : c.largo ? "largo" : c.c ? "c" : null });
+      if (c.h) td.innerHTML = c.h(r); else td.textContent = c.f ? c.f(v, r) : (v ?? "–");
+      return td;
+    }));
+    if (!o.detalle) return [tr];
+    tr.classList.add("fila-det"); tr.tabIndex = 0; tr.setAttribute("aria-expanded", abiertos.has(r) ? "true" : "false");
+    const alternar = ev => {
+      if (ev.target.closest("button, a, input, select")) return;
+      if (abiertos.has(r)) { abiertos.delete(r); tr.nextElementSibling?.classList.contains("detalle") && tr.nextElementSibling.remove(); tr.setAttribute("aria-expanded", "false"); }
+      else { abiertos.add(r); tr.after(filaDet(r)); tr.setAttribute("aria-expanded", "true"); }
+    };
+    tr.addEventListener("click", alternar);
+    tr.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === tr) { ev.preventDefault(); alternar(ev); } });
+    return abiertos.has(r) ? [tr, filaDet(r)] : [tr];
+  }
+  function filaGrupo(g) {
+    const ab = gAbiertos.has(g.k);
+    const tr = el("tr", { class: "grupo", tabindex: "0", "aria-expanded": ab ? "true" : "false" },
+      el("td", { colspan: vis.length }, ajustar(el("div", { class: "cab-g", html: `<span class="fl-g" aria-hidden="true">▸</span>` + grupo.cabecera(g.k, g.rs) }))));
+    const alternar = ev => {
+      if (ev.target.closest("button, a, input, select")) return;
+      ab ? gAbiertos.delete(g.k) : gAbiertos.add(g.k); pintar();
+      const t = $$("tr.grupo", tbody).find(x => x.dataset.g === g.k); if (t) t.focus({ preventScroll: true });
+    };
+    tr.dataset.g = g.k;
+    tr.addEventListener("click", alternar);
+    tr.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === tr) { ev.preventDefault(); alternar(ev); } });
+    return tr;
+  }
+  function pintar() {
+    if (orden) {
+      const c = cols[orden.i];
+      filas.sort((a, b) => { const x = valor(c, a), y = valor(c, b);
+        if (x == null || x === "") return 1; if (y == null || y === "") return -1;
+        return (typeof x === "number" ? x - y : String(x).localeCompare(String(y), "es")) * orden.d; });
+    }
+    $$("th", trh).forEach((th, j) => { const i = cols.indexOf(vis[j]); th.setAttribute("aria-sort", orden && orden.i === i ? (orden.d > 0 ? "ascending" : "descending") : "none"); });
+    const fs = filtradas(), nodos = [];
+    if (grupo) {
+      const mapa = new Map();
+      for (const r of fs) { const k = claveDe(r); if (!mapa.has(k)) mapa.set(k, []); mapa.get(k).push(r); }
+      const gs = [...mapa].map(([k, rs]) => ({ k, rs }));
+      gs.sort((a, b) => (a.k === "") - (b.k === "") || (grupo.orden || o.ordenGrupos || ((x, y) => y.rs.length - x.rs.length))(a, b) || a.k.localeCompare(b.k, "es"));
+      claves = gs.map(g => g.k);
+      for (const g of gs) {
+        nodos.push(filaGrupo(g));
+        if (gAbiertos.has(g.k)) for (const r of g.rs) nodos.push(...filaDatos(r));
+      }
+      cuenta.textContent = `${f0(gs.length)} ${gs.length === 1 ? "grupo" : "grupos"} · ${f0(fs.length)} filas`;
+      mas.hidden = true;
+      todos.hidden = !gs.length; todos.textContent = gs.length && gs.every(g => gAbiertos.has(g.k)) ? "Cerrar todos" : "Abrir todos";
+    } else {
+      for (const r of fs.slice(0, mostrar)) nodos.push(...filaDatos(r));
+      cuenta.textContent = `${f0(Math.min(mostrar, fs.length))} de ${f0(fs.length)}`;
+      mas.hidden = fs.length <= mostrar;
+      if (todos) todos.hidden = true;
+    }
+    tbody.replaceChildren(...nodos);
+    if (!fs.length) tbody.append(el("tr", {}, el("td", { colspan: vis.length }, "Sin resultados.")));
+  }
+  function usarGrupo(id, recordar = true) {
+    grupo = grupos.find(g => g.id === id) || null; gAbiertos.clear(); mostrar = porPag;
+    if (selG) selG.value = grupo ? grupo.id : "";
+    try { if (memoria && recordar) localStorage.setItem(memoria, grupo ? grupo.id : ""); } catch (e) { /* sin almacenamiento: no se recuerda */ }
+    pintar();
+  }
+  function descargar() {
+    const q2 = v => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const cs = cols.filter(c => c.csv !== false);
+    const pre = grupo ? [q2("Grupo: " + grupo.t)] : [];
+    const lineas = [pre.concat(cs.map(c => q2(c.t))).join(",")].concat(filtradas().map(r =>
+      (grupo ? [q2(grupo.texto ? grupo.texto(claveDe(r), r) : claveDe(r))] : []).concat(cs.map(c => q2(c.csv ? c.csv(r) : valor(c, r)))).join(",")));
+    const a = el("a", { href: URL.createObjectURL(new Blob(["﻿" + lineas.join("\r\n")], { type: "text/csv;charset=utf-8" })), download: o.archivo || "tabla.csv" });
+    document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  let inicial = o.agrupar || "";
+  try { if (memoria && localStorage.getItem(memoria) != null) inicial = localStorage.getItem(memoria); } catch (e) { /* sin almacenamiento */ }
+  usarGrupo(inicial, false);
+  return {
+    filtrar(valores) {
+      if (inp) inp.value = ""; q = "";
+      for (const f of filtros) { f.val = valores[f.campo] || ""; f.sel.value = f.val; }
+      mostrar = porPag; pintar();
+    },
+    agrupar: usarGrupo,
+    abrir(pred, termino) {
+      const r = o.filas.find(pred); if (!r) return;
+      for (const f of filtros) { f.val = ""; f.sel.value = ""; }
+      if (inp) inp.value = termino; q = sinTilde(termino);
+      abiertos.add(r); if (grupo) gAbiertos.add(claveDe(r));
+      mostrar = porPag; pintar();
+      setTimeout(() => { const tr = $("tr.fila-det[aria-expanded='true']", tbody); if (tr) { tr.scrollIntoView({ block: "center" }); tr.focus({ preventScroll: true }); } }, 60);
+    },
+  };
+}
+
+const tarjeta = (titulo, nota) => { const t = el("div", { class: "tarjeta" }); if (titulo) t.append(el("h3", {}, titulo)); if (nota) t.append(el("p", { class: "nota" }, nota)); return t; };
+const kpi = (et, va, de) => el("div", { class: "kpi" }, el("div", { class: "et", html: et }), el("div", { class: "va" }, va), de ? el("div", { class: "de" }, de) : null);
+const CANAL = { V: "Verde", D: "Naranja", F: "Rojo" };
+const canalH = c => c ? `<span class="canal ${esc(c)}"><i aria-hidden="true"></i>${esc(CANAL[c] || c)}</span>` : "–";
+const ZONA = { ZTE: { t: "Amazonía (ZTE)", c: "var(--s1)" }, ZTC: { t: "Fuera de la ZTE (ZTC)", c: "var(--s3)" },
+  Extranjero: { t: "Extranjero", c: "var(--s2)" }, "Sin dato": { t: "Sin dato en el padrón", c: "var(--mudo)" } };
+const zonaT = z => (ZONA[z] || { t: z || "–" }).t;
+const zonaH = z => z ? `<span class="zona"><i style="background:${(ZONA[z] || {}).c || "var(--mudo)"}" aria-hidden="true"></i>${esc(zonaT(z))}</span>` : "–";
+const destT = d => d ? `${d} · ${(D.meta.destinos || {})[d] || ""}` : "Sin aduana de destino";
+const convT = k => !k ? "–" : k.split(", ").map(x => x === "Sin beneficio" ? "Sin beneficio" : x.startsWith("C-") ? `Código liberatorio ${x.slice(2)}` : x.startsWith("I-") ? `TPI ${x.slice(2)}` : x).join(", ");
+const montoCaso = r => r.vv == null ? null : (r.igv || 0) > 0 ? Math.round(r.vv * 118) / 100 : r.vv;
+const montoH = r => r.vv == null ? "–" : din(r.mon, montoCaso(r)) + ((r.igv || 0) > 0 ? `<span class="igv-b" title="Valor de venta ${esc(din(r.mon, r.vv))} + IGV 18 % calculado">IGV</span>` : "");
+const tipoDoc = cpe => ({ "01": "Factura", "07": "Nota de crédito", "08": "Nota de débito" })[cpe.slice(0, 2)] || "Comprobante";
+const folio = cpe => cpe.slice(3);
+
+const copiable = t => `<button class="copiar" type="button" data-c="${esc(t)}" title="Copiar">${esc(t)}</button>`;
+document.addEventListener("click", e => {
+  const b = e.target.closest(".copiar"); if (!b) return;
+  const listo = () => { b.classList.add("ok"); setTimeout(() => b.classList.remove("ok"), 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.c).then(listo, () => {});
+});
+/* Datos que pide el portal público del emisor para mostrar el comprobante */
+const portalDatos = (cpe, f, tot) => ({ tipo: cpe.startsWith("07") ? "Nota Crédito" : cpe.startsWith("08") ? "Nota Débito" : "Factura", folio: folio(cpe),
+  fecha: f ? `${f.slice(8, 10)}-${f.slice(5, 7)}-${f.slice(0, 4)}` : "", monto: tot == null ? "" : (+tot).toFixed(2) });
+const portalLink = () => D.meta.portal ? `<a class="btn claro" href="${esc(D.meta.portal)}" target="_blank" rel="noopener noreferrer">${ic("abrir")}Abrir portal</a>` : "";
+function portalH(cpe, f, tot) {
+  const p = portalDatos(cpe, f, tot);
+  return `<span class="et">Para el portal:</span>${copiable(p.tipo)}${copiable(p.folio)}${copiable(p.fecha)}${copiable(p.monto)}${portalLink()}`;
+}
+
+/* ---------- indicadores (íconos) ---------- */
+const MARCAS = {
+  igv: { t: "Con IGV: el monto suma el 18 % calculado", ic: "pct", c: "var(--critico)" },
+  ztc: { t: "Comprador domiciliado fuera de la ZTE", ic: "pin", c: "var(--s3)" },
+  zte: { t: "Comprador domiciliado en la ZTE", ic: "pin", c: "var(--s1)" },
+  ext: { t: "Comprador del extranjero", ic: "globo", c: "var(--suave)" },
+  pub: { t: "Entidad pública", ic: "edificio", c: "var(--suave)" },
+  pn: { t: "Persona natural", ic: "persona", c: "var(--suave)" },
+  rev: { t: "Comprador que vende o alquila maquinaria (actividad CIIU)", ic: "reventa", c: "var(--texto)" },
+  nuevo: { t: "Comprador con RUC reciente (180 días o menos antes de comprar)", ic: "nuevo", c: "var(--serio)" },
+  nohab: { t: "Comprador no habido o con RUC no activo", ic: "alertas", c: "var(--critico)" },
+  anul: { t: "Reemitida tras una baja o nota de crédito", ic: "docx", c: "var(--serio)" },
+  xml: { t: "Factura revisada (XML del emisor)", ic: "doc", c: "var(--ok)" },
+  traza: { t: "Máquina enlazada con su DAM por número de serie", ic: "enlace", c: "var(--ok)" },
+  usada: { t: "Máquina usada", ic: "reloj", c: "var(--suave)" },
+  dep: { t: "Pasó por depósito aduanero", ic: "almacen", c: "var(--suave)" },
+  sinreg: { t: "DAM de Tarapoto que no está en el cuaderno de control (dato faltante)", ic: "pausa", c: "var(--aviso)" },
+  tras: { t: "Con solicitud de traslado a la ZTC para esta serie", ic: "camion", c: "var(--ok)" },
+  trasp: { t: "Traslado probable por tipo de máquina y fecha (confirmar con el XML)", ic: "camion", c: "var(--aviso)" },
+  exp: { t: "Con DAM de exportación", ic: "salida", c: "var(--ok)" },
+  venta: { t: "Venta enlazada por número de serie", ic: "ventas", c: "var(--texto)" },
+  mudo: { t: "Al comprar figuraba en la ZTE; hoy está domiciliado fuera", ic: "mudanza", c: "var(--serio)" },
+  gre_ztc: { t: "Guía de remisión con llegada fuera de la ZTE", ic: "ruta", c: "var(--critico)" },
+  gre_cambio: { t: "Guía a la ZTC dada de baja y cambiada por otra a la ZTE", ic: "ruta", c: "var(--serio)" },
+  gre_zte: { t: "Guía de remisión con llegada en la ZTE", ic: "ruta", c: "var(--ok)" },
+  gre: { t: "Con guía de remisión de la máquina", ic: "ruta", c: "var(--texto)", oculta: 1 },
+};
+const marcasH = mk => `<span class="mks">${(mk || []).map(k => MARCAS[k] && !MARCAS[k].oculta ? `<span class="mk" title="${esc(MARCAS[k].t)}" role="img" aria-label="${esc(MARCAS[k].t)}" style="color:${MARCAS[k].c}">${ic(MARCAS[k].ic)}</span>` : "").join("")}</span>`;
+const marcasT = mk => (mk || []).map(k => MARCAS[k] ? MARCAS[k].t : k);
+function leyendaMarcas(claves) {
+  return el("details", { class: "leyenda-mk" }, el("summary", {}, "Qué significa cada ícono"),
+    el("div", { class: "items", html: claves.map(k => `<span class="it"><span class="mk" style="color:${MARCAS[k].c}">${ic(MARCAS[k].ic)}</span>${esc(MARCAS[k].t)}</span>`).join("") }));
+}
+
+/* ---------- bloques de las fichas ---------- */
+function bloque(titulo, icono, filas, o = {}) {
+  const b = el("div", { class: "bloque " + (o.clase || "") });
+  b.append(el("h4", { html: ic(icono) + esc(titulo) }));
+  const dl = el("dl");
+  for (const [k, v] of filas) if (v != null && v !== "") dl.append(el("dt", {}, k), el("dd", { html: v }));
+  if (dl.childNodes.length) b.append(dl);
+  if (o.html) b.append(el("div", { html: o.html }));
+  return b;
+}
+/* Control de la DAM: solo importa si tiene el beneficio (solicitud de regularización) y sus solicitudes de traslado.
+   Con beneficio: procedente, no conforme, en trámite o solicitud ingresada. Sin beneficio: improcedente o sin solicitud de reconocimiento. */
+const ctlEstado = (c, dest) => !c ? (dest && dest !== "271" ? "Sin registro: lo controla la intendencia de destino" : "Sin registro en el cuaderno (dato faltante)")
+  : c.benef === false ? `Sin beneficio · ${(c.sol || "").toLowerCase()}` : `Con beneficio · ${(c.sol || c.reg || "").toLowerCase()}`;
+const ctlClase = (c, dest) => !c ? (dest && dest !== "271" ? "" : "pend") : c.benef === false ? "" : "ok";
+const trasDam = dam => D.traslados.filter(t => (t.dams || []).includes(dam));
+function bloqueControl(dam, k) {
+  const d = D.dams[dam] || {}, c = d.ctl;
+  const trs = trasDam(dam);
+  const s = k ? +k.split("#")[1] : null;
+  return bloque("Control de la DAM", "lupax", [
+    ["Beneficio", `<span class="etq ${ctlClase(c, d.dest)}">${esc(ctlEstado(c, d.dest))}</span>` + (c && c.nsol ? ` · solicitud ${esc(c.nsol)}` : "")],
+    ["Fuente", c ? esc(c.fuente || "") : d.dest && d.dest !== "271" ? `Destino ${esc(destT(d.dest))}: no está en el cuaderno de la IA Tarapoto.`
+      : "No está en ConsolidadoT ni en Ingreso de DAM: completar el dato en el cuaderno."],
+    ["Traslado informado", c ? esc(c.tras_txt || "") : ""], ["Observaciones", c ? esc(c.obs || "") : ""],
+    ["Solicitudes de traslado", trs.length ? trs.map(t => `${esc(t.exp)} · ${fecha(t.f)} · ${esc(t.tipo)}` +
+      (s != null && t.maqs.includes(k) ? ` <span class="etq ok">incluye esta serie</span>`
+        : t.maqs.length ? ` <span class="etq">series ${esc(t.maqs.map(x => x.split("#")[1]).join(", "))}</span>`
+        : ` <span class="etq pend">sin serie: completar en el cuaderno</span>`)).join("<br>") : "Ninguna"],
+  ], { clase: ctlClase(c, d.dest) });
+}
+function bloqueMaquina(m, titulo = "Máquina importada") {
+  return bloque(titulo, "importaciones", [
+    ["Máquina", `${esc(m.cat)} ${esc(m.marca || "")} ${esc(m.modelo || "")}` + (m.usada ? ` <span class="etq pend">usada</span>` : "")],
+    ["PIN / serie", m.pin ? copiable(m.pin) : "s/d"], ["Motor", m.motor ? copiable(m.motor) : ""],
+    ["Año", esc(m.anio || "") + (m.horas ? ` · ${esc(m.horas)} horas` : "")],
+    ["DAM · serie", `${copiable(m.dam)} serie ${m.s}`], ["Fecha", fecha(m.f)],
+    ["Destino", esc(destT(m.dest))], ["Canal", canalH(m.canal)], ["Beneficio", esc(convT(m.conv))], ["CIF", `USD ${f2(m.cif)}`],
+    ["Antes en depósito", m.dep ? `DAM ${esc(m.dep.dam)} del ${fecha(m.dep.f)}` : ""],
+    ["Exportada", m.exp ? `DAM ${esc(m.exp.dam)} del ${fecha(m.exp.f)} (${esc((D.meta.aduanas || {})[m.exp.ad] || m.exp.ad)})` : ""],
+  ]);
+}
+function bloqueTraslado(i, conf, venta) {
+  const t = D.traslados[i]; if (!t) return null;
+  const dias = venta ? Math.round((new Date(venta.f) - new Date(t.f)) / 864e5) : null;
+  return bloque(conf ? "Solicitud de traslado" : "Traslado probable", "camion", [
+    ["Expediente", copiable(t.exp)], ["Fecha", fecha(t.f) + (dias != null ? ` <span class="etq">la venta es ${Math.abs(dias)} días ${dias >= 0 ? "después" : "antes"}</span>` : "")],
+    ["Tipo", esc(t.tipo)], ["Mercancía", esc(t.merc) + (t.cant ? ` · ${f0(t.cant)} ud.` : "")],
+    ["Máquinas", t.maqs.length ? t.maqs.map(k => { const m = IDX.maq.get(k); return `${esc(k.replace("#", " serie "))}${m ? " · " + esc(m.cat.toLowerCase() + " " + m.modelo) + (m.usada ? " (usada)" : "") : ""}`; }).join("<br>") : (t.dams || []).join(", ")],
+    ["Monto", t.monto ? `S/ ${f0(t.monto)} <span class="etq">${esc(t.pago)}</span>` : ""],
+    ["RI", t.ri ? `${esc(t.ri)}${t.ri_f ? " del " + fecha(t.ri_f) : ""} · ${esc(t.res)}` : ""],
+    ["Observación", (t.obs || []).map(esc).join("<br>")],
+  ], { clase: conf ? "ok" : "pend", html: conf ? "" : `<p>Propuesto por tipo de máquina y fecha. Se confirma si la serie del XML de la venta es la de la DAM del traslado.</p>` });
+}
+function bloqueMismaDam(dam, k) {
+  const d = D.dams[dam]; if (!d || d.maqs.length < 2) return null;
+  const otras = d.maqs.filter(x => x !== k).map(x => IDX.maq.get(x)).filter(Boolean);
+  return bloque(`Misma DAM: ${otras.length} ${otras.length === 1 ? "máquina más" : "máquinas más"}`, "enlace", [], {
+    html: `<ul>${otras.slice(0, 12).map(m => `<li>Serie ${m.s} · ${esc(m.cat)} ${esc(m.modelo)}${m.pin ? " · " + esc(m.pin) : ""}` +
+      (m.ventas.length ? ` · vendida en ${m.ventas.map(c => `<a href="#alertas" data-caso="${esc(c)}">${esc(folio(c))}</a>`).join(", ")}` : " · sin venta enlazada") +
+      ((m.tras || []).some(i => D.traslados[i] && D.traslados[i].salida) ? ` <span class="etq ok">trasladada</span>` : "") + `</li>`).join("")}</ul>` +
+      (otras.length > 12 ? `<p>Y ${otras.length - 12} más.</p>` : "") });
+}
+function bloqueCadena(c) {
+  const pasos = (c.cadena || []).map(p => {
+    const via = p.via === "Baja" ? "dada de baja" : `anulada con la NC ${esc(folio(p.nc))} del ${fecha(p.nc_f)} (${esc((D.meta.motivos || {})[p.mot] || "motivo " + p.mot)})`;
+    return `<div class="paso-c">${esc(folio(p.orig))} · ${fecha(p.orig_f)} · ${(p.orig_igv || 0) > 0 ? "<b>con IGV</b>" : "sin IGV"} <span class="fl">→</span> ${via} <span class="fl">→</span> ` +
+      (p.reem ? `${esc(folio(p.reem))} · ${fecha(p.reem_f)} · ${(p.reem_igv || 0) > 0 ? "<b>con IGV</b>" : "sin IGV"}` : "sin reemisión") +
+      (p.cambio === "con→sin" ? ` <span class="etq alerta">pasó de con IGV a sin IGV</span>` : "") +
+      (p.misma_serie ? ` <span class="etq ok">misma máquina (serie ${esc(p.misma_serie)})</span>` : p.otra_serie ? ` <span class="etq alerta">otra máquina</span>` : "") +
+      ((p.tras || []).length ? ` <span class="etq pend">cerca del traslado ${p.tras.map(i => esc(D.traslados[i].exp.split("-").pop())).join(", ")}</span>` : "") + `</div>` +
+      (p.enlace ? `<p>Factura de la NC identificada por ${esc(p.enlace)}.</p>` : "");
+  });
+  const ant = (c.anticipos || []).map(x => { const v = IDX.venta.get(x); return `<div class="paso-c">Descuenta el anticipo ${esc(folio(x))}${v ? ` del ${fecha(v.f)} por ${esc(din(v.mon, v.vv))}` : ""}</div>`; });
+  if (!pasos.length && !ant.length) return null;
+  return bloque("Cadena de comprobantes", "docx", [], { html: pasos.concat(ant).join(""), clase: (c.cadena || []).some(p => p.cambio === "con→sin" || (p.tras || []).length) ? "alerta" : "" });
+}
+function bloqueComprador(cl, extra = []) {
+  if (!cl) return null;
+  const dias = cl.dias_insc;
+  return bloque("Comprador", "persona", [
+    ["Nombre", esc(cl.nombre)], ["RUC / doc.", copiable(cl.ruc) + ` <span class="etq">${esc(cl.tipo)}</span>`],
+    ["Domicilio fiscal (hoy)", zonaH(cl.zona) + (cl.lugar ? ` · ${esc(cl.lugar)}` : "") + (cl.direccion ? `<br>${esc(cl.direccion)}` : "")],
+    ["Actividad", esc(cl.actividad || "")], ["RUC inscrito", cl.finsc ? fecha(cl.finsc) + (dias != null && dias >= 0 && dias <= 365 ? ` <span class="etq ${dias <= 180 ? "pend" : ""}">${f0(dias)} días antes de su primera compra</span>` : "") : ""],
+    ["Estado del RUC", [cl.eruc, cl.condicion].filter(Boolean).map(esc).join(" · ") + (cl.no_habido ? ` <span class="etq alerta">revisar</span>` : "")],
+    ...extra,
+  ]);
+}
+
+/* Guías de remisión enlazadas: partida y llegada con su zona, bienes, estado y cómo se enlazó */
+const POR_GRE = { "factura citada en la guía": "la guía cita la factura", "serie de la máquina": "la serie o el motor de la máquina está en los bienes",
+  "guía del transportista": "guía del transportista que sigue a la del remitente", "guía citada en la factura": "la factura cita la guía",
+  "tipo de máquina, comprador y fecha": "probable: mismo tipo de máquina, comprador y fechas cercanas" };
+const persG = x => x && (x.nombre || x.ruc) ? `${esc(x.nombre || x.ruc)}${x.nombre && x.ruc ? ` <span class="etq">${esc(x.ruc)}</span>` : ""}` : "s/d";
+function guiaH(g, por, fVenta, i) {
+  const d = fVenta && g.f ? Math.round((new Date(g.f) - new Date(fVenta)) / 864e5) : null;
+  const est = g.estado === "Baja" ? ` <span class="etq alerta" title="${esc(g.baja || "")}">dada de baja</span>` : !g.vig ? ` <span class="etq pend">sustentada en una guía dada de baja</span>` : "";
+  const interno = /^traslado entre establecimientos/i.test(g.motivo || "") && g.l.zona === "ZTE";
+  const lleg = g.vig && g.l.zona === "ZTC" ? "alerta" : g.vig && g.l.zona === "ZTE" && !interno ? "ok" : "";
+  const bienes = (g.bienes || []).slice(0, 3).map(esc).join("<br>") + ((g.nb || 0) > 3 ? `<br><span class="etq">y ${f0(g.nb - 3)} más</span>` : "");
+  return `<div class="guia${g.vig ? "" : " baja"}">` +
+    `<div class="paso-c"><b>${copiable(g.num)}</b> <span class="etq">${esc(g.tipo)}</span> ${fecha(g.f)}` +
+    (d != null ? ` <span class="etq">${d === 0 ? "el día de la venta" : Math.abs(d) + (Math.abs(d) === 1 ? " día " : " días ") + (d > 0 ? "después" : "antes")}</span>` : "") + est +
+    (i != null ? `<button class="btn claro mini ver-g" type="button" data-guia="${i}" title="Abrir la guía completa para leerla o imprimirla">${ic("doc")}Ver guía</button>` : "") + `</div>` +
+    `<div class="paso-c">${esc(g.p.lugar || "s/d")} ${zonaH(g.p.zona)} <span class="fl">→</span> <b>${esc(g.l.lugar || "s/d")}</b> <span class="etq ${lleg}">${esc(zonaT(g.l.zona))}</span>` +
+    (interno ? ` <span class="etq" title="Traslado del importador entre sus sedes: no muestra a dónde llevó la máquina el comprador">traslado interno</span>` : "") + `</div>` +
+    (g.l.dir ? `<div class="mudo">Llegada: ${esc(g.l.dir)}</div>` : "") +
+    `<div class="mudo">Emisor: ${persG(g.em)} · Destinatario: ${persG(g.de)}${g.rem ? " · Remitente: " + persG(g.rem) : ""}</div>` +
+    `<div class="mudo">${g.motivo ? "Motivo: " + esc(g.motivo) + " · " : ""}${g.fi ? "Inicio del traslado: " + fecha(g.fi) + " · " : ""}${(g.placas || []).length ? "Placas: " + g.placas.map(esc).join(", ") + " · " : ""}${g.peso ? "Peso: " + esc(g.peso) : ""}</div>` +
+    (bienes ? `<div class="bienes">${bienes}</div>` : `<div class="mudo">La guía no detalla los bienes.</div>`) +
+    (por ? `<div class="mudo">Enlace: ${esc(POR_GRE[por] || por)}</div>` : "") + `</div>`;
+}
+function bloqueGuias(c) {
+  const gs = (c.gre || []).map(x => [D.guias[x.i], x.por, x.i]).filter(x => x[0]);
+  const b = c.gre_bus;
+  const busq = b ? `<p class="mudo">Búsqueda del equipo: guías del comprador del ${fecha(b.desde)} al ${fecha(b.hasta)} (${f0(b.n)} ${b.n === 1 ? "guía" : "guías"})${b.incompleta ? " · <b>búsqueda incompleta</b>" : ""}.</p>` : "";
+  if (!gs.length) return b ? bloque("Guías de remisión", "ruta", [], { clase: "pend", html: `<p>Ninguna guía consultada lleva esta máquina.</p>` + busq }) : null;
+  const mot = c.mot || [];
+  return bloque(`Guías de remisión (${gs.length})`, "ruta", [], { clase: "ancho " + (mot.includes("gre_ztc") || mot.includes("gre_cambio") ? "alerta" : mot.includes("gre_zte") ? "ok" : "pend"),
+    html: `<div class="guias">${gs.map(([g, por, i]) => guiaH(g, por, c.f, i)).join("")}</div>` + busq });
+}
+
+/* ---------- ver la factura (representación desde el XML) ---------- */
+const TIPO_OP = { "0101": "Venta interna", "0102": "Exportación", "0112": "Venta interna – sustenta gastos deducibles", "0200": "Exportación de bienes", "1001": "Operación sujeta a detracción" };
+const UND = { NIU: "Unidad", EA: "Unidad", ZZ: "Servicio", KGM: "Kilogramo", C62: "Unidad" };
+const TRIB = { IGV: "IGV (18 %)", EXO: "Operación exonerada", INA: "Operación inafecta", EXP: "Exportación", GRA: "Operación gratuita", ISC: "ISC", OTROS: "Otros tributos" };
+const pagoT = id => /^Cuota0*\d+$/.test(id) ? "Cuota " + id.replace(/^Cuota0*/, "") : ({ Credito: "Crédito", Contado: "Contado" })[id] || id;
+function verFactura(cpe) {
+  const x = D.facturas[cpe]; if (!x) return;
+  const m = v => v == null ? "" : NF2.format(v), s = mon(x.mon);
+  const titulo = { "01": "Factura electrónica", "07": "Nota de crédito electrónica", "08": "Nota de débito electrónica" }[x.tipo] || "Comprobante electrónico";
+  const filas = x.lineas.map(l => `<tr><td>${esc(l.n)}</td><td class="n">${l.cant == null ? "" : NF2.format(l.cant)}</td><td>${esc(UND[l.und] || l.und)}</td>
+    <td>${l.desc.map(esc).join("<br>")}${l.cod ? `<div class="mudo">Código: ${esc(l.cod)}</div>` : ""}</td>
+    <td class="n">${m(l.vu)}</td><td>${esc(l.afect_t || l.afect || "")}${l.afect ? ` (${esc(l.afect)})` : ""}</td><td class="n">${m(l.valor)}</td></tr>`).join("");
+  const trib = (x.trib || []).map(t => `<tr><th>${esc(TRIB[t.t] || t.t)} · base ${s} ${m(t.base)}</th><td class="n">${s} ${m(t.monto)}</td></tr>`).join("");
+  const pago = (x.pago || []).map(p => `${esc(pagoT(p.id))}${p.monto != null ? ` · ${s} ${m(p.monto)}` : ""}${p.f ? ` · vence ${fecha(p.f)}` : ""}`).join("<br>");
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer">
+<title>${esc(titulo)} ${esc(x.id)}</title><style>
+body{margin:0;background:#eef2f1;color:#13211f;font:14px/1.45 Inter,"Segoe UI",system-ui,Arial,sans-serif}
+.hoja{max-width:900px;margin:24px auto;background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+header{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #13211f;padding-bottom:14px}
+h1{font-size:18px;margin:0 0 4px}.caja{border:2px solid #13211f;border-radius:10px;padding:10px 18px;text-align:center;min-width:220px}
+.caja b{display:block;font-size:16px}.mudo{color:#5f6d69;font-size:12.5px}.datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 24px;margin:16px 0}
+.datos div span{color:#5f6d69;display:block;font-size:12px}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+th,td{border-bottom:1px solid #dfe5e3;padding:7px 8px;text-align:left;vertical-align:top}thead th{background:#f3f6f5;font-size:12px}
+td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.tot{margin-left:auto;max-width:420px}.tot th{font-weight:500;color:#5f6d69}
+.tot tr.total th,.tot tr.total td{font-weight:750;color:#13211f;font-size:15px;border-bottom:2px solid #13211f}.ref{background:#fff6e5;border-radius:8px;padding:10px 12px;margin:12px 0}
+footer{margin-top:22px;font-size:11.5px;color:#5f6d69;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}
+button{font:inherit;font-size:13px;font-weight:650;border:0;border-radius:999px;padding:8px 16px;background:#12302e;color:#e9f2ef;cursor:pointer}
+@media print{body{background:#fff}.hoja{box-shadow:none;margin:0;max-width:none}button{display:none}}
+</style></head><body><div class="hoja">
+<header><div><h1>${esc(x.emisor.nombre)}</h1><div class="mudo">RUC ${esc(x.emisor.ruc)}</div><div class="mudo">${esc(x.emisor.dir)}${x.emisor.lugar ? " · " + esc(x.emisor.lugar) : ""}</div>
+<div class="mudo">Establecimiento anexo: ${esc(x.emisor.est || "s/d")}${x.emisor.sede ? " · sede: " + esc(x.emisor.sede) : ""}</div></div>
+<div class="caja"><span class="mudo">RUC ${esc(x.emisor.ruc)}</span><b>${esc(titulo.toUpperCase())}</b><b>${esc(x.id)}</b></div></header>
+<div class="datos"><div><span>Fecha de emisión</span>${fecha(x.f)}${x.hora ? " · " + esc(x.hora) : ""}</div>${x.venc ? `<div><span>Vencimiento</span>${fecha(x.venc)}</div>` : ""}
+<div><span>Moneda</span>${esc(x.mon)}</div>${x.op ? `<div><span>Tipo de operación</span>${esc(TIPO_OP[x.op] || x.op)}</div>` : ""}
+${x.oc ? `<div><span>Orden de compra</span>${esc(x.oc)}</div>` : ""}${(x.guias || []).length ? `<div><span>Guías de remisión</span>${x.guias.map(esc).join(", ")}</div>` : ""}
+<div><span>Cliente</span>${esc(x.cliente.nombre)}</div><div><span>${x.cliente.tdoc === "6" ? "RUC" : "Documento"}</span>${esc(x.cliente.doc)}</div>
+<div><span>Dirección del cliente</span>${esc(x.cliente.dir || "s/d")}${(x.cliente.lugar || x.cliente.lugar_fac) ? " · " + esc(x.cliente.lugar || x.cliente.lugar_fac) : ""}</div></div>
+${x.ref ? `<div class="ref"><b>Documento que modifica:</b> ${esc(x.ref.id)} · motivo ${esc(x.ref.mot)} ${esc((D.meta.motivos || {})[x.ref.mot] || "")}${x.ref.mot_t ? " · " + esc(x.ref.mot_t) : ""}</div>` : ""}
+<table><thead><tr><th>N.°</th><th class="n">Cant.</th><th>Unidad</th><th>Descripción</th><th class="n">Valor unitario</th><th>Afectación del IGV</th><th class="n">Valor de venta</th></tr></thead><tbody>${filas}</tbody></table>
+<table class="tot"><tbody><tr><th>Valor de venta</th><td class="n">${s} ${m(x.tot.valor)}</td></tr>${trib}
+${x.tot.dscto ? `<tr><th>Descuentos</th><td class="n">${s} ${m(x.tot.dscto)}</td></tr>` : ""}<tr class="total"><th>Importe total</th><td class="n">${s} ${m(x.tot.total)}</td></tr></tbody></table>
+${pago ? `<p><b>Forma de pago:</b><br>${pago}</p>` : ""}${(x.notas || []).length ? `<p class="mudo">${x.notas.map(esc).join("<br>")}</p>` : ""}
+<footer><span>Representación generada desde el XML (UBL 2.1) en el tablero de riesgo. Uso interno: información con reserva tributaria.</span><button type="button" onclick="print()">Imprimir</button></footer>
+</div></body></html>`;
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+  const w = window.open(url, "_blank");
+  if (!w) location.assign(url);
+  setTimeout(() => URL.revokeObjectURL(url), 300000);
+}
+/* ---------- ver la guía de remisión (representación desde el detalle que descargó el extractor de GRE) ---------- */
+const SECC_GRE = [["traslado.partida", "Punto de partida"], ["traslado.llegada", "Punto de llegada"], ["traslado.transportista", "Transportista"],
+  ["traslado.vehiculo", "Vehículos"], ["traslado.conductor", "Conductores"], ["traslado.proveedor", "Proveedores"], ["traslado.comprador", "Comprador"],
+  ["traslado.contenedores", "Contenedores"], ["traslado", "Datos del traslado"], ["receptor", "Destinatario"], ["remitente", "Remitente"],
+  ["emisor", "Emisor"], ["emision", "Emisión"], ["docRelacionado", "Documentos relacionados"], ["docGrePorEvento", "Guías por evento"],
+  ["baja", "Baja"], ["noConformidad", "No conformidad"], ["", "Otros datos"]];
+const ETQ_GRE = { numRuc: "RUC", numDocIdentidad: "N.° de documento", codTipDocIdentidad: "Tipo de documento (código)", desTipDocIdentidad: "Tipo de documento",
+  desNomRazonSocial: "Nombre o razón social", desRazonSocial: "Razón social", desNombre: "Nombre", desNombres: "Nombres", desApellidos: "Apellidos",
+  numPlaca: "Placa", numRegistroMTC: "Registro MTC", numLicencia: "Licencia de conducir", numCertificado: "Certificado", vehiculoSec: "Vehículo secundario",
+  codUbigeo: "Ubigeo", desDireccion: "Dirección", desDepartamento: "Departamento", desProvincia: "Provincia", desDistrito: "Distrito",
+  codEstablecimiento: "Código de establecimiento", codMotivoTraslado: "Motivo (código)", desMotivoTraslado: "Motivo", desMotivoTrasladoOtros: "Motivo (detalle)",
+  fecInicioTraslado: "Inicio del traslado", fecEntrega: "Entrega", codModalidadTraslado: "Modalidad (código)", desModalidadTraslado: "Modalidad",
+  numBultosPallets: "Bultos o pallets", codUnidadMedidaPb: "Unidad del peso", numPesoBruto: "Peso bruto", numPlacaVehiculo: "Placa del vehículo",
+  fecEmision: "Fecha de emisión", horEmision: "Hora de emisión", desObservacion: "Observaciones", desMotivo: "Motivo", fecBaja: "Fecha de baja",
+  numDocumento: "N.° de documento", numSerie: "Serie", codTipoDocumento: "Tipo de documento (código)", desTipoDocumento: "Tipo de documento",
+  numContenedor: "Contenedor", numPrecinto: "Precinto", codProductoSunat: "Código de producto SUNAT", codSubPartida: "Subpartida", codGtin: "GTIN",
+  indBienRegulado: "Bien regulado", docRelacionado: "Documento relacionado" };
+const TILDES_GRE = { emision: "emisión", direccion: "dirección", razon: "razón", numero: "número", codigo: "código", guia: "guía", vehiculo: "vehículo",
+  observacion: "observación", telefono: "teléfono", pais: "país", transito: "tránsito", via: "vía", unico: "único", electronico: "electrónico", ruc: "RUC", mtc: "MTC" };
+function etqGRE(k) {
+  if (ETQ_GRE[k]) return ETQ_GRE[k];
+  const m = /^(num|des|cod|fec|hor|ind|mto|cnt|nom|tip)([A-Z0-9].*)$/.exec(k);
+  let t = (m ? m[2] : k).replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").toLowerCase()
+    .split(" ").map(p => TILDES_GRE[p] || p).join(" ");
+  if (m && m[1] === "fec") t = "fecha de " + t;
+  if (m && m[1] === "hor") t = "hora de " + t;
+  if (m && m[1] === "ind") t = "indicador de " + t;
+  if (m && m[1] === "cod") t += " (código)";
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+const valGRE = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? fecha(v) : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? `${fecha(v.slice(0, 10))} ${esc(v.slice(11, 16))}` : esc(v);
+/* Filas de una sección del detalle: «traslado.vehiculo[1].vehiculoSec[1].numPlaca» → «Vehículo secundario › Placa» */
+function filasGRE(campos, pre) {
+  const varios = campos.some(([r]) => /\[([2-9]|\d{2,})\]/.test(r.slice(pre.length)));
+  return campos.map(([r, v]) => {
+    const resto = r.slice(pre.length);
+    const idx = [...resto.matchAll(/\[(\d+)\]/g)].map(m => m[1]);
+    const claves = resto.replace(/\[\d+\]/g, "").split(".").filter(k => k && k !== "direccion" && k !== "contribuyente");
+    const ult = claves.pop() || pre.split(".").pop();
+    return `<tr><th>${esc([...claves.map(etqGRE), etqGRE(ult)].join(" › "))}${varios && idx.length ? ` (${esc(idx.join("."))})` : ""}</th><td>${valGRE(v)}</td></tr>`;
+  }).join("");
+}
+function verGuia(i) {
+  const g = D.guias[i]; if (!g) return;
+  const ver = g.ver || null, campos = (ver && ver.c) || [];
+  const dato = ruta => (campos.find(p => p[0] === ruta) || [])[1] || "";
+  const tipo = g.tipo ? g.tipo.toUpperCase() : "";
+  const per = x => x && (x.nombre || x.ruc) ? `${esc(x.nombre || "")}${x.ruc ? `${x.nombre ? "<br>" : ""}<span class="mudo">${esc(x.ruc)}</span>` : ""}` : "s/d";
+  const punto = (t, x) => `<div class="punto"><h3>${t}</h3><b>${esc(x.lugar || "s/d")}</b> <span class="zona">${esc(zonaT(x.zona))}</span>` +
+    `<div>${esc(x.dir || "")}</div><div class="mudo">${x.u ? "Ubigeo " + esc(x.u) : ""}${x.ruc ? `${x.u ? " · " : ""}RUC ${esc(x.ruc)}` : ""}</div></div>`;
+  const datos = [["Fecha de emisión", fecha(g.f) + (dato("emision.horEmision") ? " · " + esc(dato("emision.horEmision").slice(0, 5)) : "")],
+    ["Inicio del traslado", g.fi ? fecha(g.fi) : ""], ["Entrega", dato("traslado.fecEntrega") ? valGRE(dato("traslado.fecEntrega")) : ""],
+    ["Motivo", esc(g.motivo || "")], ["Modalidad", esc(dato("traslado.desModalidadTraslado"))], ["Peso bruto", esc(g.peso || "")],
+    ["Bultos o pallets", esc(dato("traslado.numBultosPallets"))], ["Placas", (g.placas || []).map(esc).join(", ")],
+    ["Destinatario", per(g.de)], ["Remitente", g.rem ? per(g.rem) : ""]].filter(x => x[1]);
+  const bienes = ver && ver.b && ver.b.length
+    ? ver.b.map(([n, cod, desc, cant, und, otros]) => `<tr><td>${esc(n)}</td><td>${esc(cod)}</td><td>${esc(desc)}${(otros || []).length ? `<div class="mudo">${otros.map(([k, v]) => `${esc(etqGRE(k))}: ${esc(v)}`).join(" · ")}</div>` : ""}</td><td class="n">${esc(cant)}</td><td>${esc(und)}</td></tr>`).join("")
+    : (g.bienes || []).map((d, j) => `<tr><td>${j + 1}</td><td></td><td>${esc(d)}</td><td></td><td></td></tr>`).join("");
+  const casos = D.casos.filter(c => (c.gre || []).some(x => x.i === i));
+  const maqs = (D.maquinas || []).filter(m => (m.gre || []).includes(i));
+  const enlaces = casos.map(c => { const x = c.gre.find(y => y.i === i);
+    return `<li>Caso ${esc(folio(c.cpe))} (${esc(c.nivel)}) · ${esc(c.cli)}${x.por ? ` · enlace: ${esc(POR_GRE[x.por] || x.por)}` : ""}</li>`; })
+    .concat(maqs.map(m => `<li>Máquina ${esc(m.cat || "")} ${esc(m.modelo || "")} · ${esc(m.pin || m.k)}</li>`)).join("");
+  const secciones = [];
+  const usados = new Set();
+  for (const [pre, titulo] of SECC_GRE) {
+    const cs = campos.filter(([r]) => !usados.has(r) && (!pre || r === pre || r.startsWith(pre + ".") || r.startsWith(pre + "[")));
+    cs.forEach(([r]) => usados.add(r));
+    if (pre === "docRelacionado" && (g.docs || []).length) continue; // ya están arriba, en «Documentos relacionados»
+    if (cs.length) secciones.push(`<section><h3>${titulo}</h3><table class="kv"><tbody>${filasGRE(cs, pre)}</tbody></table></section>`);
+  }
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer">
+<title>Guía de remisión ${esc(g.num)}</title><style>
+body{margin:0;background:#eef2f1;color:#13211f;font:14px/1.45 Inter,"Segoe UI",system-ui,Arial,sans-serif}
+.hoja{max-width:900px;margin:24px auto;background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+header{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #13211f;padding-bottom:14px}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:15px;margin:22px 0 6px;border-bottom:1px solid #dfe5e3;padding-bottom:4px}h3{font-size:13px;margin:0 0 4px;color:#5f6d69;text-transform:uppercase;letter-spacing:.03em}
+.caja{border:2px solid #13211f;border-radius:10px;padding:10px 18px;text-align:center;min-width:220px}.caja b{display:block;font-size:16px}
+.mudo{color:#5f6d69;font-size:12.5px}.datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 24px;margin:16px 0}
+.datos div span{color:#5f6d69;display:block;font-size:12px}.puntos{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.punto{border:1px solid #dfe5e3;border-radius:10px;padding:10px 12px}.zona{font-size:12px;background:#f3f6f5;border-radius:999px;padding:1px 8px}
+table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}th,td{border-bottom:1px solid #dfe5e3;padding:6px 8px;text-align:left;vertical-align:top}
+thead th{background:#f3f6f5;font-size:12px}td.n{text-align:right;white-space:nowrap}.kv th{width:42%;font-weight:500;color:#5f6d69}
+.secc{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:4px 24px}.secc section{break-inside:avoid;margin-top:10px}
+.aviso{background:#fff6e5;border-radius:8px;padding:10px 12px;margin:12px 0}.baja{background:#fde8e8;color:#7d1d1d}ul{margin:4px 0;padding-left:20px}
+footer{margin-top:22px;font-size:11.5px;color:#5f6d69;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}
+button{font:inherit;font-size:13px;font-weight:650;border:0;border-radius:999px;padding:8px 16px;background:#12302e;color:#e9f2ef;cursor:pointer}
+@media print{body{background:#fff}.hoja{box-shadow:none;margin:0;max-width:none}button{display:none}}
+</style></head><body><div class="hoja">
+<header><div><h1>${esc(g.em.nombre || "Emisor")}</h1><div class="mudo">RUC ${esc(g.em.ruc)}</div></div>
+<div class="caja"><span class="mudo">RUC ${esc(g.em.ruc)}</span><b>GUÍA DE REMISIÓN ELECTRÓNICA</b>${tipo ? `<b>${esc(tipo)}</b>` : ""}<b>${esc(g.num)}</b></div></header>
+${g.estado === "Baja" ? `<div class="aviso baja"><b>Guía dada de baja</b>${g.baja ? ": " + esc(g.baja) : ""}${dato("baja.fecBaja") ? " · " + valGRE(dato("baja.fecBaja")) : ""}</div>`
+    : g.vig === false ? `<div class="aviso">Esta guía se sustenta en otra guía que fue dada de baja.</div>` : g.estado ? `<div class="mudo" style="margin-top:8px">Estado en SUNAT: ${esc(g.estado)}</div>` : ""}
+<div class="datos">${datos.map(([k, v]) => `<div><span>${k}</span>${v}</div>`).join("")}</div>
+<div class="puntos">${punto("Punto de partida", g.p || {})}${punto("Punto de llegada", g.l || {})}</div>
+<h2>Bienes${g.nb ? ` (${f0(g.nb)})` : ""}</h2>
+${bienes ? `<table><thead><tr><th>N.°</th><th>Código</th><th>Descripción</th><th class="n">Cantidad</th><th>Unidad</th></tr></thead><tbody>${bienes}</tbody></table>` : `<p class="mudo">La guía no detalla los bienes.</p>`}
+${!ver && (g.nb || 0) > (g.bienes || []).length ? `<p class="mudo">Se muestran ${f0((g.bienes || []).length)} de ${f0(g.nb)} bienes.</p>` : ""}
+${(g.docs || []).length ? `<h2>Documentos relacionados</h2><ul>${g.docs.map(d => `<li>${esc(d.nombre || d.t)} ${esc(d.num)}${d.ruc ? ` · RUC ${esc(d.ruc)}` : ""}</li>`).join("")}</ul>` : ""}
+${enlaces ? `<h2>En el tablero</h2><ul>${enlaces}</ul>` : ""}
+${secciones.length ? `<h2>Todos los datos de la guía</h2><div class="secc">${secciones.join("")}</div>`
+    : `<div class="aviso">Esta guía se integró al tablero antes de que se guardaran todos sus datos: se muestran los principales. Las cantidades, el transportista, los vehículos y los conductores aparecerán cuando se vuelva a generar el tablero.</div>`}
+<footer><span>Representación generada desde el detalle de la guía en SUNAT (extractor de GRE) en el tablero de riesgo. Uso interno: información con reserva tributaria.</span><button type="button" onclick="print()">Imprimir</button></footer>
+</div></body></html>`;
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+  const w = window.open(url, "_blank");
+  if (!w) location.assign(url);
+  setTimeout(() => URL.revokeObjectURL(url), 300000);
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-factura]"); if (b) { e.preventDefault(); verFactura(b.dataset.factura); return; }
+  const vg = e.target.closest("[data-guia]"); if (vg) { e.preventDefault(); verGuia(+vg.dataset.guia); return; }
+  const g = e.target.closest("[data-guias]"); if (g) { e.preventDefault(); const c = IDX.caso.get(g.dataset.guias); if (c) entregarPedido(pedidoCaso(c), g); return; }
+  const a = e.target.closest("[data-caso]"); if (a) { e.preventDefault(); irCaso(a.dataset.caso); }
+});
+
+/* ---------- guías de remisión: listas para el extractor de GRE (sunat-gre/extractor-gre.js) ----------
+   El tablero no consulta a SUNAT: arma la lista de búsquedas (formato GRE_PEDIDO), la copia y el
+   usuario la pega en el panel del extractor, dentro de su sesión de SUNAT. */
+const TIPOS_GRE = ["09", "31", "G9"];               // remitente, transportista y por eventos
+const VENTANA_CASO = { antes: 3, despues: 15 };     // días alrededor de la venta en que se buscan las guías de un caso
+function rucGRE(r) {
+  const s = String(r || "");
+  if (!/^(10|15|16|17|20)\d{9}$/.test(s)) return false;
+  const suma = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2].reduce((a, p, i) => a + p * +s[i], 0);
+  let dv = 11 - suma % 11; if (dv === 10) dv = 0; else if (dv === 11) dv = 1;
+  return dv === +s[10];
+}
+const isoMas = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const hoyLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const esReincidente = c => (c.nivel === "Alta" || c.nivel === "Media") && rucGRE(c.ruc);
+
+function pedidoGRE(id, titulo, busquedas) {
+  // «conocidas»: guías que el tablero ya tiene; el extractor no vuelve a descargarlas (solo anota su estado).
+  return { tipo: "GRE_PEDIDO", version: 1, id, titulo, generado: new Date().toISOString(), tablero: D.meta.generado || "",
+    busquedas, conocidas: ((D.gre || {}).claves || []).slice() };
+}
+
+/* Guías citadas en la factura: solo las electrónicas de remitente (serie que empieza con letra; las «V…» son del transportista) */
+function guiasCitadas(cpe) {
+  const fac = D.facturas[cpe]; if (!fac) return [];
+  const ruc = (fac.emisor || {}).ruc || D.meta.ruc, vistas = new Set(), out = [];
+  for (const g of fac.guias || []) {
+    const m = /^([A-Z][A-Z0-9]{3})-0*(\d{1,8})$/.exec(String(g).toUpperCase().replace(/\s+/g, ""));
+    if (!m || m[1].startsWith("V") || vistas.has(m[0])) continue;
+    vistas.add(m[0]);
+    out.push({ rucEmisor: ruc, codCpe: "09", serie: m[1], numero: m[2] });
+  }
+  return out;
+}
+
+/* Búsquedas de un caso: el comprador como destinatario y como remitente, de 3 días antes a 15 después de la venta,
+   y cada guía citada en la factura, consultada directamente por su número. */
+function busquedasCaso(c) {
+  const caso = folio(c.cpe), conFecha = /^\d{4}-\d{2}-\d{2}$/.test(c.f || ""), out = [];
+  const desde = conFecha ? isoMas(c.f, -VENTANA_CASO.antes) : "", hasta = conFecha ? isoMas(c.f, VENTANA_CASO.despues) : "";
+  if (conFecha && rucGRE(c.ruc)) {
+    out.push({ etiqueta: `Caso ${caso}: comprador ${c.ruc} como destinatario`, caso, grupo: "caso", rucReceptor: c.ruc, tipos: TIPOS_GRE, desde, hasta },
+      { etiqueta: `Caso ${caso}: comprador ${c.ruc} como remitente`, caso, grupo: "caso", rucEmisor: c.ruc, tipos: TIPOS_GRE, desde, hasta });
+  }
+  for (const d of guiasCitadas(c.cpe)) out.push({ etiqueta: `Caso ${caso}: guía ${d.serie}-${d.numero} citada en la factura`, caso, grupo: "citada", directa: d });
+  return out;
+}
+const pedidoCaso = c => pedidoGRE("caso-" + folio(c.cpe), "Caso " + folio(c.cpe), busquedasCaso(c));
+const pedidoCasosAltos = () => {
+  const altos = D.casos.filter(c => c.nivel === "Alta");
+  return pedidoGRE("casos-altos-" + hoyLocal(), `Casos de nivel alto (${altos.length})`, altos.flatMap(busquedasCaso));
+};
+
+/* Lista del día (ayer y hoy): compradores reincidentes (con casos altos o medios), el importador y los transportistas vigilados */
+function pedidoDelDia() {
+  const hoy = hoyLocal(), busq = [], vistos = new Set();
+  const agregar = b => {
+    const k = `${b.rucEmisor || ""}|${b.rucReceptor || ""}`;
+    if (!vistos.has(k)) { vistos.add(k); busq.push({ tipos: TIPOS_GRE, desde: "hoy-1", hasta: "hoy", ...b }); }
+  };
+  const reinc = new Map();
+  for (const c of D.casos) if (esReincidente(c)) { if (!reinc.has(c.ruc)) reinc.set(c.ruc, []); reinc.get(c.ruc).push(folio(c.cpe)); }
+  for (const [ruc, casos] of reinc) {
+    const caso = casos.join(", ");
+    agregar({ etiqueta: `Reincidente ${ruc} como destinatario`, caso, grupo: "reincidente", rucReceptor: ruc });
+    agregar({ etiqueta: `Reincidente ${ruc} como remitente`, caso, grupo: "reincidente", rucEmisor: ruc });
+  }
+  if (rucGRE(D.meta.ruc)) {
+    agregar({ etiqueta: `Importador ${D.meta.ruc} como remitente`, grupo: "importador", rucEmisor: D.meta.ruc });
+    agregar({ etiqueta: `Importador ${D.meta.ruc} como destinatario`, grupo: "importador", rucReceptor: D.meta.ruc });
+  }
+  for (const t of D.transportistas || []) if (rucGRE(t.ruc)) agregar({ etiqueta: `Transportista ${t.ruc}`, grupo: "transportista", rucEmisor: t.ruc });
+  return pedidoGRE("diario-" + hoy, "Lista del día " + fecha(hoy), busq);
+}
+
+function resumenPedido(p) {
+  const l = p.busquedas.filter(b => !b.directa), d = p.busquedas.length - l.length;
+  const rucs = new Set(l.flatMap(b => [b.rucEmisor, b.rucReceptor].filter(Boolean)));
+  return `${f0(l.length)} ${l.length === 1 ? "búsqueda" : "búsquedas"} de ${f0(rucs.size)} RUC` +
+    (d ? ` y ${f0(d)} ${d === 1 ? "guía citada" : "guías citadas"} en facturas` : "");
+}
+
+/* Copia la lista para pegarla en el extractor; si el navegador no deja copiar, la descarga como archivo. */
+async function entregarPedido(p, boton, nota) {
+  const avisar = (texto, clase) => {
+    if (nota) { nota.textContent = texto; nota.className = "nota " + (clase || ""); return; }
+    if (!boton.dataset.html) boton.dataset.html = boton.innerHTML;
+    boton.innerHTML = ic(clase === "error" ? "limite" : "check") + esc(texto.split(":")[0]);
+    boton.title = texto;
+    clearTimeout(boton._t); boton._t = setTimeout(() => { boton.innerHTML = boton.dataset.html; boton.title = ""; }, 6000);
+  };
+  if (!p.busquedas.length) { avisar("No hay nada que buscar: no hay RUC válidos ni guías citadas.", "error"); return; }
+  const txt = JSON.stringify(p);
+  let copiada = false;
+  try { if (navigator.clipboard) { await navigator.clipboard.writeText(txt); copiada = true; } } catch (e) { /* sin permiso para copiar */ }
+  if (!copiada) {
+    const a = el("a", { href: URL.createObjectURL(new Blob([txt], { type: "application/json" })), download: p.id + ".json" });
+    document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  avisar(copiada
+    ? `Lista copiada: ${resumenPedido(p)}. En SUNAT, péguela (Ctrl+V) en el panel del extractor y pulse «Buscar y descargar».`
+    : `Lista descargada (${p.id}.json): ${resumenPedido(p)}. En el extractor use «Abrir archivo de lista».`);
+}
+const botonPedido = (icono, texto, clase, fabricar, nota) => el("button", { class: clase, type: "button", html: ic(icono) + esc(texto),
+  onclick: ev => entregarPedido(fabricar(), ev.currentTarget, nota) });
+
+/* ---------- vistas ---------- */
+const VISTAS = [{ id: "resumen", t: "Resumen" }, { id: "alertas", t: "Alertas" }, { id: "maquinas", t: "Máquinas" }, { id: "clientes", t: "Clientes" }];
+let tablaAlertas = null, tablaMaquinas = null, tablaClientes = null;
+
+function iniciar() {
+  const M = D.meta;
+  IDX = { maq: new Map(D.maquinas.map(m => [m.k, m])), venta: new Map(D.ventas.map(v => [v.cpe, v])), caso: new Map(D.casos.map(c => [c.cpe, c])) };
+  document.title = "Tablero de riesgo · " + M.contribuyente;
+  $("#titulo").textContent = `Perfil de riesgo: ${M.contribuyente}`;
+  $("#sub").textContent = `RUC ${M.ruc} · maquinaria importada con destino a la Amazonía y su venta · datos al ${fecha(M.generado)}`;
+  $("#acc").append(el("span", { class: "pill", html: ic("calendario") + `${mesLargo(M.desde)} – ${mesLargo(M.hasta)}` }),
+    el("button", { class: "pill oscura", type: "button", title: "Cierra el tablero y borra los datos de la memoria del navegador",
+      onclick: () => location.replace(location.pathname), html: ic("candado") + "Cerrar tablero" }));
+  const nav = $("#pestanas"); nav.hidden = false;
+  const app = $("#app"); app.hidden = false;
+  for (const v of VISTAS) {
+    const b = el("button", { class: "nav-it", role: "tab", id: "tab-" + v.id, "aria-controls": v.id, "aria-selected": "false",
+      onclick: () => { location.hash = v.id; }, html: ic(v.id) + `<span>${v.t}</span>` });
+    if (v.id === "alertas") b.append(el("span", { class: "cnt", title: "Casos de nivel alto" }, f0(D.kpi.casos.Alta)));
+    nav.append(b);
+    app.append(el("section", { class: "vista", id: v.id, role: "tabpanel", "aria-labelledby": "tab-" + v.id }));
+  }
+  vistaResumen($("#resumen")); vistaAlertas($("#alertas")); vistaMaquinas($("#maquinas")); vistaClientes($("#clientes"));
+  window.addEventListener("hashchange", activar); activar();
+}
+function activar() {
+  const id = VISTAS.some(v => v.id === location.hash.slice(1)) ? location.hash.slice(1) : "resumen";
+  for (const v of VISTAS) {
+    $("#" + v.id).classList.toggle("activa", v.id === id);
+    $("#tab-" + v.id).setAttribute("aria-selected", v.id === id ? "true" : "false");
+  }
+  window.scrollTo({ top: 0 });
+}
+function irAlertas(filtro) {
+  location.hash = "alertas";
+  const val = {};
+  if (filtro.nivel) val.nivel = filtro.nivel;
+  if (filtro.mot) val.mot = D.meta.texto[filtro.mot];
+  if (filtro.mk) val.mk = MARCAS[filtro.mk].t;
+  if (filtro.estado) val.estado = filtro.estado;
+  setTimeout(() => { tablaAlertas.agrupar("", false); tablaAlertas.filtrar(val); }, 0);
+}
+function irMaquinas(filtro) { location.hash = "maquinas"; setTimeout(() => tablaMaquinas.filtrar({ mk: filtro.mk ? MARCAS[filtro.mk].t : "" }), 0); }
+function irCaso(cpe) {
+  if (IDX.caso.has(cpe)) { location.hash = "alertas"; setTimeout(() => tablaAlertas.abrir(c => c.cpe === cpe, folio(cpe)), 0); return; }
+  const v = IDX.venta.get(cpe);
+  if (v && D.clientes[v.ruc]) { location.hash = "clientes"; setTimeout(() => tablaClientes.abrir(c => c.ruc === v.ruc, v.ruc), 0); }
+}
+function plan(o) {
+  const t = el("article", { class: "plan c3 " + (o.clase || "") });
+  t.append(el("header", {}, el("span", { class: "ico", html: ic(o.icono) }), el("h3", {}, o.titulo), o.chip ? el("span", { class: "chip" }, o.chip) : null),
+    el("div", { class: "valor" }, o.valor), el("div", { class: "sub2" }, o.sub),
+    el("ul", {}, o.puntos.filter(Boolean).map(p => el("li", {}, el("i", { style: `background:${o.punto}` }), el("span", { html: p })))));
+  if (o.boton) t.append(el("div", { class: "pie" }, el("a", { class: "pill " + (o.pill || ""), href: "#" + o.destino, onclick: o.ir ? (e => { e.preventDefault(); o.ir(); }) : null }, o.boton, " →")));
+  return t;
+}
+
+function vistaResumen(sec) {
+  const K = D.kpi, C = D.control || {};
+  const conf = D.casos.filter(c => c.estado.startsWith("Confirmada")).length;
+  const prob = D.casos.filter(c => c.estado.startsWith("Traslado probable")).length;
+  const d271 = K.por_dest.find(d => d.cod === "271"), d217 = K.por_dest.find(d => d.cod === "217");
+  const art2 = (C.art2 || []).map(a => `${esc(a.periodo)}: ${esc((a.resultado || "").toLowerCase())}`).join(" · ");
+  const f1 = el("div", { class: "g12" }); sec.append(f1);
+  f1.append(
+    plan({ clase: "oscuro", icono: "alertas", titulo: "Casos", chip: "Prioridad", valor: `${f0(K.casos.Alta)} · ${f0(K.casos.Media)} · ${f0(K.casos.Baja)}`, sub: "nivel alto · medio · bajo",
+      punto: "var(--lat-act)", puntos: [conf ? `<b>${f0(conf)}</b> confirmados por número de serie sin traslado de salida` : "",
+        K.alta_sin_xml ? `<b>${f0(K.alta_sin_xml)}</b> de nivel alto esperan su XML` : "Todos los de nivel alto tienen su XML",
+        prob ? `<b>${f0(prob)}</b> con traslado probable por confirmar` : ""], boton: "Ver alertas", destino: "alertas" }),
+    plan({ icono: "maquinas", titulo: "Máquinas con beneficio", chip: `${f0(K.maq_dams)} DAM`, valor: f0(K.maq_series), sub: "series de maquinaria que se siguen",
+      punto: "var(--lima)", puntos: [d271 ? `Destino Tarapoto: <b>${f0(d271.series)}</b> (${f0(d271.ctl)} DAM en el cuaderno de control)` : "",
+        d217 ? `Destino Pucallpa: <b>${f0(d217.series)}</b> (las controla la IA Pucallpa)` : "",
+        K.fuera_series ? `<b>${f0(K.fuera_series)}</b> series sin beneficio no se siguen (${f0(K.fuera_dams)} DAM)` : ""],
+      boton: "Ver máquinas", destino: "maquinas", pill: "lima" }),
+    plan({ icono: "ventas", titulo: "Ventas de maquinaria", chip: `${f0(Object.keys(D.clientes).length)} compradores`, valor: f0(K.vend), sub: "facturas vigentes, sin anuladas ni anticipos",
+      punto: "var(--s3)", puntos: [`Fuera de la ZTE: <b>${f0(K.vend_z.ZTC)}</b>`, `Con IGV: <b>${f0(K.vend_igv)}</b>`,
+        K.vend_z["Sin dato"] ? `Sin zona (personas naturales y sin padrón): <b>${f0(K.vend_z["Sin dato"])}</b>` : ""],
+      boton: "Ver compradores", destino: "clientes" }),
+    plan({ clase: "violeta", icono: "escudo", titulo: "Control de la IA", chip: "Tarapoto", valor: f0(K.ben_dams || 0), sub: "DAM con solicitud de regularización (con beneficio)",
+      punto: "var(--violeta)", puntos: [`<b>${f0(K.tras_salida)}</b> solicitudes de traslado de maquinaria a la ZTC (${f0(K.tras_maq)} máquinas)`,
+        K.sinreg_dams ? `<b>${f0(K.sinreg_dams)}</b> DAM de Tarapoto no están en el cuaderno: completar el dato` : "",
+        K.tras_sin_serie ? `<b>${f0(K.tras_sin_serie)}</b> solicitudes de traslado sin serie: completar en el cuaderno` : "",
+        art2 ? `Artículo 2: ${art2}` : "", C.complejidad ? `Complejidad ${NF3.format(C.complejidad.valor)} (media ${NF3.format(C.complejidad.media)})` : ""],
+      boton: "Ver traslados", destino: "maquinas", pill: "violeta", ir: () => { location.hash = "maquinas"; setTimeout(() => $("#traslados")?.scrollIntoView({ block: "start" }), 50); } }));
+
+  const tz = tarjeta("Ventas de maquinaria según el domicilio fiscal del comprador", "Domicilio vigente en el padrón del RUC. «Sin dato» son sobre todo personas naturales, cuyo domicilio no es público.");
+  segmentada(tz, ["ZTE", "ZTC", "Extranjero", "Sin dato"].map(z => ({ t: zonaT(z), v: K.vend_z[z] || 0, c: ZONA[z].c })), f0);
+  sec.append(tz);
+
+  const tp = tarjeta("Patrones", "Lo que muestran los datos en conjunto. Cada patrón lleva a los casos que lo forman.");
+  const ul = el("ul", { class: "hallazgos" });
+  for (const p of D.patrones) {
+    const li = el("li", {}, el("div", { html: NIVEL(p.nivel) }), el("div", { class: "txt", html: `<b class="t">${esc(p.t)}</b>` +
+      ((p.items || []).length ? "<ul>" + p.items.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "") + esc(p.txt) }));
+    if (p.filtro || p.maq) {
+      const a = el("a", { href: p.filtro ? "#alertas" : "#maquinas" }, p.filtro ? "Ver casos →" : "Ver máquinas →");
+      a.addEventListener("click", e => { e.preventDefault(); p.filtro ? irAlertas(p.filtro) : irMaquinas(p.maq); });
+      li.lastChild.append(" ", a);
+    }
+    ul.append(li);
+  }
+  tp.append(ul); sec.append(tp);
+
+  if (D.pendientes.length) {
+    const n1 = D.pendientes.filter(p => p.prio === 1).length;
+    const tpen = tarjeta("Comprobantes por descargar del portal", `${f0(D.pendientes.length)} comprobantes sin XML: ${f0(n1)} de casos de nivel alto, ${f0(D.pendientes.filter(p => p.prio === 2).length)} para confirmar traslados probables y ${f0(D.pendientes.filter(p => p.prio === 3).length)} de cadenas de anulación. Al subir sus XML, cada máquina se enlaza con su DAM y el caso se confirma o se descarta.`);
+    tpen.append(el("div", { class: "acc" }, el("button", { class: "btn principal", type: "button", onclick: () => { location.hash = "alertas"; setTimeout(() => { const d = $("#bandeja"); d.open = true; d.scrollIntoView({ block: "start" }); }, 50); } }, "Abrir la lista"),
+      el("button", { class: "btn", type: "button", onclick: () => csvPendientes() }, "Descargar CSV")));
+    sec.append(tpen);
+  }
+
+  const tcons = tarjetaConsultas(); if (tcons) sec.append(tcons);
+
+  const tc = tarjeta("Calidad de los datos", "Qué fuentes sostienen el tablero, qué límites tienen y qué se retiró por no aportar al análisis.");
+  const g = el("div", { class: "calidad" });
+  for (const [k, t, i, c] of [["confiable", "Confiable", "check", "var(--ok)"], ["limites", "Con límites", "limite", "var(--aviso)"], ["descartado", "Descartado", "equis", "var(--mudo)"]]) {
+    g.append(el("div", {}, el("h3", { html: `<span style="color:${c};display:inline-flex">${ic(i)}</span>${t}` }),
+      el("ul", { html: (D.calidad[k] || []).map(x => `<li><b>${esc(x.t)}</b>${esc(x.d)}</li>`).join("") })));
+  }
+  tc.append(g); sec.append(tc);
+}
+
+/* Excel de consultas a otras intendencias: viaja cifrado dentro de los datos */
+const XLSX_CONSULTAS = "consultas_otras_intendencias.xlsx";
+function descargarAdjunto(nombre) {
+  const b64 = (D.adjuntos || {})[nombre]; if (!b64) return;
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const a = el("a", { href: URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })), download: nombre });
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function tarjetaConsultas() {
+  if (!(D.adjuntos || {})[XLSX_CONSULTAS]) return null;
+  const otras = Object.values(D.dams).filter(x => x.dest && x.dest !== "271" && (x.conv || "").includes("C-"));
+  const ventasAlta = new Set(D.casos.filter(c => c.nivel !== "Baja").flatMap(c => c.maqs.map(k => k.split("#")[0])));
+  const p1 = Object.entries(D.dams).filter(([k, x]) => x.dest && x.dest !== "271" && (x.conv || "").includes("C-") && ventasAlta.has(k)).length;
+  const series = D.casos.filter(c => (c.series || []).length && !c.maqs.length && !(c.tras_prob || []).length).length;
+  const t = tarjeta("Consultas a otras intendencias", `El cuaderno de la IA Tarapoto solo cubre las DAM con destino Tarapoto. Este Excel lista lo que conviene consultar en el sistema: ` +
+    `${f0(otras.length)} DAM con maquinaria y destino en otra intendencia (${f0(p1)} de prioridad 1, ya vendidas con indicios de salida), ${f0(series)} series que no están en las DAM del periodo ` +
+    `y las DAM de 2024 con traslados de maquinaria. Complete las celdas amarillas y devuélvalo por el chat: el tablero lo incorpora y conserva lo ya completado en la siguiente versión.`);
+  t.id = "consultas";
+  t.append(el("div", { class: "acc" }, el("button", { class: "btn principal", type: "button", onclick: () => descargarAdjunto(XLSX_CONSULTAS), html: ic("descarga") + "Descargar Excel de consultas" })));
+  return t;
+}
+
+function csvPendientes() {
+  const q2 = v => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lineas = [["Prioridad", "Tipo", "Folio", "Fecha", "Monto", "Moneda", "Cliente", "Motivo"].join(",")].concat(D.pendientes.map(p => {
+    const d = portalDatos(p.cpe, p.f, p.tot);
+    return [p.prio, d.tipo, d.folio, d.fecha, d.monto, p.mon, p.cli, p.por].map(q2).join(",");
+  }));
+  const a = el("a", { href: URL.createObjectURL(new Blob(["﻿" + lineas.join("\r\n")], { type: "text/csv;charset=utf-8" })), download: "comprobantes_por_descargar.csv" });
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+/* Cabeceras de grupo */
+const MERC = ["Maquinaria amarilla", "Maquinaria agrícola", "Motores y grupos electrógenos", "Otros"];
+const nCasos = (rs, n) => rs.filter(r => r.nivel === n).length;
+function resumenCasos(rs) {
+  const niveles = ["Alta", "Media", "Baja"].filter(n => nCasos(rs, n)).map(n => `${NIVEL(n)} ${nCasos(rs, n)}`).join(" ");
+  const suma = m => rs.filter(r => r.mon === m).reduce((a, r) => a + (montoCaso(r) || 0), 0);
+  const montos = [["USD", suma("USD")], ["PEN", suma("PEN")]].filter(x => x[1]).map(([m, v]) => `${mon(m)} ${f0(v)}`).join(" · ");
+  return `<span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "caso" : "casos"}</span>${niveles}${montos ? `<span class="sub-g">${montos}</span>` : ""}</span>`;
+}
+const ordenCasos = (a, b) => nCasos(b.rs, "Alta") - nCasos(a.rs, "Alta") || b.rs.length - a.rs.length || nCasos(b.rs, "Media") - nCasos(a.rs, "Media");
+const claveMaq = r => r.maqs[0] || ((r.series || [])[0] ? "serie:" + r.series[0].serie : "");
+const claveTras = r => (r.tras || [])[0] ?? (r.tras_prob || [])[0] ?? "";
+const cabTraslado = (k, rs) => {
+  if (k === "") return `<b class="g">Sin traslado</b><span class="sub-g">ni solicitado ni probable</span>` + resumenCasos(rs);
+  const t = D.traslados[+k], conf = rs.some(r => (r.tras || []).includes(+k));
+  return `<b class="g">Traslado ${esc(t.exp.split("-").slice(-2).join("-"))}</b><span class="sub-g">${fecha(t.f)} · ${esc(t.merc.toLowerCase())}${t.maqs.length ? " · " + esc(t.maqs.map(x => x.replace("#", " serie ")).join(", ")) : ""}</span>` +
+    `<span class="etq ${conf ? "ok" : "pend"}">${conf ? "solicitado para esta serie" : "probable"}</span>` + resumenCasos(rs);
+};
+const cabDam = (k, extra) => {
+  const d = D.dams[k] || {}, c = d.ctl;
+  const trs = trasDam(k);
+  return `<b class="g">DAM ${esc(k)}</b><span class="sub-g">${fecha(d.f)} · ${esc(destT(d.dest))} · ${esc(convT(d.conv))}</span>` +
+    `<span class="etq ${ctlClase(c, d.dest)}">${esc(ctlEstado(c, d.dest))}</span>` +
+    (trs.length ? `<span class="etq ok">${trs.length} ${trs.length === 1 ? "solicitud de traslado" : "solicitudes de traslado"}</span>` : "") + (extra || "");
+};
+const GRUPOS_CASOS = [
+  { id: "comprador", t: "Comprador", clave: r => r.ruc, orden: ordenCasos, texto: k => { const c = D.clientes[k] || {}; return `${c.nombre || ""} (${k})`; },
+    cabecera: (k, rs) => { const c = D.clientes[k] || {}; const mk = [c.rev ? "rev" : "", c.nuevo ? "nuevo" : "", c.no_habido ? "nohab" : ""].filter(Boolean);
+      return `<b class="g">${esc(c.nombre || k)}</b><span class="sub-g">RUC ${esc(k)}</span>${zonaH(c.zona)}<span class="sub-g">${esc(c.lugar || "")}</span>${mk.length ? marcasH(mk) : ""}` + resumenCasos(rs); } },
+  { id: "maquina", t: "Máquina (serie)", clave: claveMaq, orden: ordenCasos,
+    texto: k => k.startsWith("serie:") ? "Serie " + k.slice(6) : k ? (IDX.maq.get(k) || {}).pin || k : "Sin serie (falta el XML)",
+    cabecera: (k, rs) => {
+      if (!k) return `<b class="g">Sin serie de máquina</b><span class="sub-g">falta el XML de la factura</span>` + resumenCasos(rs);
+      if (k.startsWith("serie:")) return `<b class="g">Serie ${esc(k.slice(6))}</b><span class="sub-g">del XML; no está en las DAM del periodo</span>` + resumenCasos(rs);
+      const m = IDX.maq.get(k) || {};
+      return `<b class="g">${esc(m.cat)} ${esc(m.marca || "")} ${esc(m.modelo || "")}</b><span class="sub-g">${esc(m.pin || "")} · DAM ${esc(m.dam)} serie ${m.s}</span>` +
+        `<span class="etq ${ctlClase((D.dams[m.dam] || {}).ctl, m.dest)}">${esc(ctlEstado((D.dams[m.dam] || {}).ctl, m.dest))}</span>` + resumenCasos(rs); } },
+  { id: "dam", t: "DAM", clave: r => r.dams[0] || "", orden: ordenCasos, texto: k => k || "Sin DAM enlazada",
+    cabecera: (k, rs) => k ? cabDam(k, resumenCasos(rs)) : `<b class="g">Sin DAM enlazada</b><span class="sub-g">falta el XML o la serie es anterior al periodo</span>` + resumenCasos(rs) },
+  { id: "mercancia", t: "Tipo de mercancía", clave: r => r.merc || "Otros", orden: (a, b) => MERC.indexOf(a.k) - MERC.indexOf(b.k),
+    cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${esc([...new Set(rs.map(r => r.cat))].join(", "))}</span>` + resumenCasos(rs) },
+  { id: "tipo", t: "Tipo de máquina", clave: r => r.cat, orden: ordenCasos, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${esc(rs[0].merc || "")}</span>` + resumenCasos(rs) },
+  { id: "departamento", t: "Departamento del comprador", clave: r => (D.clientes[r.ruc] || {}).dep || "Sin dato", orden: ordenCasos,
+    cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${esc([...new Set(rs.map(r => (D.clientes[r.ruc] || {}).zona).filter(Boolean))].map(zonaT).join(", "))}</span>` +
+      `<span class="sub-g">${new Set(rs.map(r => r.ruc)).size} ${new Set(rs.map(r => r.ruc)).size === 1 ? "comprador" : "compradores"}</span>` + resumenCasos(rs) },
+  { id: "traslado", t: "Traslado", clave: claveTras, orden: (a, b) => (D.traslados[+a.k] || {}).f > (D.traslados[+b.k] || {}).f ? 1 : -1,
+    texto: k => k === "" ? "Sin traslado" : D.traslados[+k].exp, cabecera: cabTraslado },
+  { id: "estado", t: "Estado", clave: r => r.estado, orden: ordenCasos, cabecera: (k, rs) => `<b class="g">${esc(k)}</b>` + resumenCasos(rs) },
+];
+
+/* Cronología: importación, solicitudes de traslado, comprobantes, venta y guías, con los días respecto de la venta */
+function cronologia(c) {
+  const ev = [], venta = c.f;
+  for (const k of c.maqs) {
+    const m = IDX.maq.get(k); if (!m) continue;
+    if (m.dep) ev.push([m.dep.f, `Ingreso a depósito (DAM ${m.dep.dam})`]);
+    ev.push([m.f, `Importación (DAM ${m.dam} serie ${m.s})`]);
+    for (const i of m.tras || []) { const t = D.traslados[i]; if (t) ev.push([t.f, `Solicitud de traslado ${t.exp} (${t.tipo})`]); }
+  }
+  for (const p of c.cadena || []) {
+    ev.push([p.orig_f, `Factura ${folio(p.orig)} ${(p.orig_igv || 0) > 0 ? "con IGV" : "sin IGV"}`]);
+    if (p.nc) ev.push([p.nc_f, `Nota de crédito ${folio(p.nc)}`]);
+  }
+  ev.push([venta, `Venta: factura ${folio(c.cpe)} a ${c.cli}`, "venta"]);
+  const gs = (c.gre || []).map(x => D.guias[x.i]).filter(Boolean);
+  const rem = gs.filter(g => g.tipo !== "Transportista");
+  for (const g of rem.length ? rem : gs) if (g.f) ev.push([g.f, `Guía ${g.num}: ${g.p.lugar || "s/d"} → ${g.l.lugar || "s/d"} (${zonaT(g.l.zona)})${g.estado === "Baja" ? ", dada de baja" : ""}`, g.vig && g.l.zona === "ZTC" ? "guia_ztc" : "guia"]);
+  if (ev.length < 3) return null;
+  ev.sort((a, b) => a[0].localeCompare(b[0]));
+  const dias = f => Math.round((new Date(f) - new Date(venta)) / 864e5);
+  const filas = ev.map(([f, t, tipo]) => {
+    const d = dias(f), tarde = tipo === "guia_ztc";
+    return `<li>${fecha(f)} · ${tipo === "venta" ? "<b>" + esc(t) + "</b>" : esc(t)}` + (tipo === "venta" ? "" : ` <span class="etq ${tarde ? "alerta" : ""}">${d === 0 ? "el día de la venta" : Math.abs(d) + (Math.abs(d) === 1 ? " día " : " días ") + (d > 0 ? "después" : "antes")}</span>`) + `</li>`;
+  });
+  return bloque("Cronología", "calendario", [], { html: `<ul>${filas.join("")}</ul>` });
+}
+
+function fichaCaso(c) {
+  const v = IDX.venta.get(c.cpe) || {}, cl = D.clientes[c.ruc];
+  const f = el("div", { class: "ficha" });
+  const nGuias = busquedasCaso(c).length;
+  f.append(el("div", { class: "ficha-acc", html: (D.facturas[c.cpe] ? `<button class="btn principal" type="button" data-factura="${esc(c.cpe)}">${ic("doc")}Ver factura</button>` : "") +
+    `<button class="btn claro" type="button" data-guias="${esc(c.cpe)}"${nGuias ? ` title="Copia la lista de búsqueda de guías de remisión de este caso para el extractor de GRE"` : ` disabled title="El comprador no tiene RUC y la factura no cita guías"`}>${ic("camion")}Buscar guías</button>` +
+    portalH(c.cpe, c.f, c.tot) }));
+  const b = el("div", { class: "bloques" }); f.append(b);
+  b.append(bloque("Venta", "ventas", [
+    ["Comprobante", `${esc(tipoDoc(c.cpe))} ${esc(folio(c.cpe))} · ${fecha(c.f)}`], ["Descripción", esc(c.desc)],
+    ["Valor de venta", esc(din(c.mon, c.vv))], ["IGV", (c.igv || 0) > 0 ? `<b>${esc(din(c.mon, c.igv))}</b>` : "Sin IGV (operación exonerada)"],
+    ["Importe total", esc(din(c.mon, c.tot)) + ((c.anticipos || []).length ? ` <span class="etq">después de descontar el anticipo</span>` : "")],
+    ["En la factura", c.lugar_fac ? `${zonaH(c.zona_fac)} · ${esc(c.lugar_fac)}` : ""], ["Sede emisora", esc(c.sede || "")],
+    ["Motivo del caso", esc(c.motivo)], ["Estado", `<span class="etq ${c.nivel === "Alta" ? "alerta" : c.nivel === "Media" ? "pend" : "ok"}">${esc(c.estado)}</span>`],
+    ["Entrega", c.entrega ? `${zonaH(c.entrega.zona)} · ${esc(c.entrega.lugar)}${c.entrega.dir ? "<br>" + esc(c.entrega.dir) : ""}<br><span class="etq">${esc(c.entrega.fuente)}</span>` : ""],
+  ], { clase: c.nivel === "Alta" ? "alerta" : "" }));
+  const bc = bloqueComprador(cl); if (bc) b.append(bc);
+  const cad = bloqueCadena(c); if (cad) b.append(cad);
+  if (c.maqs.length) {
+    for (const k of c.maqs) {
+      const m = IDX.maq.get(k); if (!m) continue;
+      b.append(bloqueMaquina(m, "Máquina vendida (por número de serie)"), bloqueControl(m.dam, k));
+      const md = bloqueMismaDam(m.dam, k); if (md) b.append(md);
+    }
+  } else {
+    const s = (c.series || [])[0];
+    b.append(bloque("Máquina vendida", "importaciones", s ? [["Serie (XML)", copiable(s.serie)], ["Motor", s.motor ? copiable(s.motor) : ""], ["Modelo", esc(s.modelo || "")], ["Año", esc(s.anio || "")]] : [],
+      { clase: "pend", html: c.dam_ext ? `<p>Consulta del equipo: ${esc(c.dam_ext.resultado)}${c.dam_ext.dam ? " · DAM " + esc(c.dam_ext.dam) + (c.dam_ext.serie ? " serie " + esc(c.dam_ext.serie) : "") : ""}` +
+        `${c.dam_ext.intendencia ? " · " + esc(c.dam_ext.intendencia) : ""}${c.dam_ext.modalidad ? " · " + esc(c.dam_ext.modalidad) : ""}${c.dam_ext.estado ? " · solicitud " + esc(c.dam_ext.estado.toLowerCase()) : ""}` +
+        `${c.dam_ext.obs ? ". " + esc(c.dam_ext.obs) : ""}.</p>` : s ? `<p>La serie no está en las DAM de ${esc(mesLargo(D.meta.desde))} a ${esc(mesLargo(D.meta.hasta))}: la máquina se importó antes. Búsquela en el sistema aduanero por la serie y el motor.</p>`
+        : `<p>Sin el XML no se conoce la serie de la máquina. Descárguelo del portal (datos arriba) y súbalo: la máquina se enlazará con su DAM y su control.</p>` }));
+  }
+  const bg = bloqueGuias(c); if (bg) b.append(bg);
+  const cr = cronologia(c); if (cr) b.append(cr);
+  for (const i of c.tras || []) b.append(bloqueTraslado(i, true, v));
+  for (const i of c.tras_prob || []) b.append(bloqueTraslado(i, false, v));
+  if (c.exp) b.append(bloque("Exportación", "salida", [["DAM", copiable(c.exp)], ["Detalle", esc((D.exportaciones.find(x => x.dam === c.exp) || {}).desc || "")]], { clase: "ok" }));
+  if ((c.acc || []).length) b.append(bloque("Acciones sugeridas", "check", [], { clase: "ancho", html: `<ol>${c.acc.map(a => `<li>${esc(a)}</li>`).join("")}</ol>` }));
+  return f;
+}
+
+function vistaAlertas(sec) {
+  const K = D.kpi;
+  sec.append(el("h2", {}, "Alertas"),
+    el("p", { class: "nota" }, "Cada caso es una venta de maquinaria con indicios de salida de la zona del beneficio. Solo se siguen las máquinas con beneficio (DAM con solicitud de regularización); las importadas sin beneficio, improcedentes o sin solicitud de reconocimiento no forman casos. Alto: comprador fuera de la ZTE, venta con IGV o reemisión sin IGV, sin solicitud de traslado para la serie, o DAM de Tarapoto que falta en el cuaderno. Medio: traslado probable por confirmar, o comprador reciente o no habido. Bajo: coherente (exportada o con solicitud de traslado para la serie). Abra un caso para ver la máquina, su DAM, el control de la IA y la cadena de comprobantes."));
+  const ks = el("div", { class: "kpis" });
+  const sub = { Alta: K.alta_sin_xml ? `${f0(K.alta_sin_xml)} esperan su XML` : `${f0(D.casos.filter(c => c.estado.startsWith("Confirmada")).length)} confirmados por número de serie`, Media: `${f0(D.casos.filter(c => c.estado.startsWith("Traslado probable")).length)} con traslado probable`, Baja: "coherentes o regularizados" };
+  for (const n of ["Alta", "Media", "Baja"]) ks.append(kpi(NIVEL(n), f0(K.casos[n]), sub[n]));
+  sec.append(ks);
+
+  // Guías de remisión: listas para el extractor de GRE (se pegan en su panel, en la sesión de SUNAT)
+  const nReinc = new Set(D.casos.filter(esReincidente).map(c => c.ruc)).size;
+  const transp = (D.transportistas || []).filter(x => rucGRE(x.ruc));
+  const tg = tarjeta("Guías de remisión (extractor de GRE)", "El tablero arma la lista; en la pantalla de guías de SUNAT, péguela en el panel del extractor y pulse «Buscar y descargar». " +
+    "El JSON que descarga el extractor es para integrarlo al tablero; el Excel, para revisar.");
+  const notaG = el("p", { class: "nota", role: "status" });
+  tg.append(el("div", { class: "ficha-acc" },
+    botonPedido("calendario", "Lista del día", "btn principal", pedidoDelDia, notaG),
+    botonPedido("alertas", "Guías de los casos altos", "btn claro", pedidoCasosAltos, notaG)),
+    el("ul", { class: "nota" },
+      el("li", {}, `Lista del día (ayer y hoy): ${f0(nReinc)} ${nReinc === 1 ? "comprador reincidente" : "compradores reincidentes"} (con casos altos o medios) como remitentes y destinatarios, el importador (RUC ${D.meta.ruc}) y ` +
+        (transp.length ? `${f0(transp.length)} ${transp.length === 1 ? "transportista" : "transportistas"}: ${transp.map(x => x.nombre ? `${x.nombre} (${x.ruc})` : x.ruc).join(", ")}.` : "ningún transportista (la lista se agrega al generar el tablero).")),
+      el("li", {}, `Casos: «Buscar guías» en cada caso, o todos los altos a la vez. Busca las guías del comprador desde ${VENTANA_CASO.antes} días antes hasta ${VENTANA_CASO.despues} días después de la venta, y las guías citadas en la factura.`),
+      ...(((D.gre || {}).claves || []).length ? [el("li", {}, `Integradas al tablero: ${f0(D.gre.claves.length)} guías (${(D.gre.archivos || []).map(x => `${x.titulo}, ${fecha(x.generado)}`).join("; ")}); ${f0((D.guias || []).length)} se enlazan con una venta o una máquina y se ven en su ficha. Las listas nuevas las marcan como conocidas para no descargarlas otra vez.`)] : [])),
+    notaG);
+  sec.append(tg);
+
+  if (D.pendientes.length) {
+    const d = el("details", { class: "tarjeta bandeja", id: "bandeja" });
+    d.append(el("summary", { html: `<h3>Comprobantes por descargar del portal (${f0(D.pendientes.length)})</h3><span class="etq">copie tipo, folio, fecha y monto</span>` }));
+    const dentro = el("div", { class: "dentro" });
+    dentro.append(el("p", { class: "nota", html: `Prioridad 1: casos de nivel alto. 2: confirmar un traslado probable. 3: cadenas de anulación. Descargue el XML de cada uno y súbalos juntos (carpeta o ZIP): el tablero se regenera con la serie de cada máquina. ${portalLink()}` }));
+    tabla(dentro, { buscar: true, ph: "Buscar folio o cliente…", porPag: 20, archivo: "comprobantes_por_descargar.csv", filas: D.pendientes,
+      cols: [{ k: "prio", t: "Prioridad", n: 1 }, { t: "Tipo", v: r => portalDatos(r.cpe, r.f, r.tot).tipo, h: r => copiable(portalDatos(r.cpe, r.f, r.tot).tipo) },
+        { t: "Folio", v: r => folio(r.cpe), h: r => copiable(folio(r.cpe)) }, { t: "Fecha", v: r => portalDatos(r.cpe, r.f, r.tot).fecha, h: r => copiable(portalDatos(r.cpe, r.f, r.tot).fecha) },
+        { t: "Monto", v: r => portalDatos(r.cpe, r.f, r.tot).monto, h: r => copiable(portalDatos(r.cpe, r.f, r.tot).monto) }, { k: "mon", t: "Moneda", f: v => mon(v) },
+        { k: "cli", t: "Cliente", largo: 1 }, { k: "por", t: "Por qué" }],
+      orden: { i: 0, d: 1 } });
+    d.append(dentro); sec.append(d);
+  }
+
+  const t = tarjeta(); sec.append(t);
+  t.append(leyendaMarcas(["sinreg", "mudo", "gre_ztc", "gre_cambio", "gre_zte", "igv", "ztc", "zte", "ext", "pub", "pn", "rev", "anul", "xml", "traza", "usada", "tras", "trasp", "exp"]));
+  t.append(el("p", { class: "nota" }, "En comprobantes con IGV el monto es el valor de venta más el 18 % calculado, sin redondear; pase el cursor sobre la etiqueta IGV para ver el valor de venta."));
+  const textoMot = k => (D.meta.texto || {})[k] || k;
+  t.append(el("p", { class: "nota" }, "Use «Agrupar por» para ver los casos por comprador, máquina, DAM, tipo de mercancía, departamento o traslado; cada grupo se abre con un clic. La elección se recuerda en este navegador."));
+  tablaAlertas = tabla(t, { id: "casos", grupos: GRUPOS_CASOS, ph: "Buscar factura, comprador, RUC, serie…", porPag: 25, archivo: "casos.csv", filas: D.casos, detalle: fichaCaso,
+    extraBusqueda: r => (r.series || []).map(s => s.serie + " " + s.motor).join(" ") + " " + r.maqs.join(" ") + " " + r.dams.join(" ") + " " + (r.gre || []).map(x => (D.guias[x.i] || {}).num || "").join(" "),
+    cols: [{ k: "nivel", t: "Nivel", h: r => NIVEL(r.nivel), v: r => ORDEN_N[r.nivel], csv: r => r.nivel },
+      { t: "Indicadores", v: r => marcasT(r.mk).join("; "), h: r => marcasH(r.mk) },
+      { t: "Factura", v: r => folio(r.cpe), c: 1 }, { k: "f", t: "Fecha", f: fecha, c: 1 },
+      { k: "cli", t: "Comprador", largo: 1, csv: r => `${r.cli} (${r.ruc})` }, { k: "desc", t: "Máquina", largo: 1 },
+      { k: "motivo", t: "Motivo y estado", largo: 1, csv: r => r.motivo,
+        h: r => esc(r.motivo) + '<br><span class="etq ' + (r.nivel === "Alta" ? "alerta" : r.nivel === "Media" ? "pend" : "ok") + '">' + esc(r.estado) + "</span>" },
+      { t: "Monto", n: 1, v: r => montoCaso(r), h: montoH, csv: r => montoCaso(r) }, { k: "mon", t: "Moneda", oculta: 1, csv: r => mon(r.mon) },
+      { k: "estado", t: "Estado", oculta: 1 }],
+    filtros: [{ t: "Nivel", campo: "nivel", valor: r => r.nivel, opciones: ["Alta", "Media", "Baja"] },
+      { t: "Motivo", campo: "mot", valor: r => r.mot.map(textoMot) },
+      { t: "Indicador", campo: "mk", valor: r => marcasT(r.mk), opciones: Object.keys(MARCAS).filter(k => D.casos.some(c => c.mk.includes(k))).map(k => MARCAS[k].t) },
+      { t: "Estado", campo: "estado", valor: r => r.estado }] });
+}
+
+function fichaMaquina(m) {
+  const f = el("div", { class: "ficha" }), b = el("div", { class: "bloques" });
+  f.append(b);
+  b.append(bloqueMaquina(m), bloqueControl(m.dam, m.k));
+  for (const i of m.tras || []) b.append(bloqueTraslado(i, D.traslados[i] && D.traslados[i].salida, null));
+  for (const cpe of m.ventas || []) {
+    const c = IDX.caso.get(cpe), v = IDX.venta.get(cpe);
+    b.append(bloque("Venta enlazada", "ventas", [["Factura", `<a href="#alertas" data-caso="${esc(cpe)}">${esc(folio(cpe))}</a> · ${fecha(v ? v.f : "")}`],
+      ["Comprador", esc(v ? v.cli : "")], ["Monto", v ? montoH(v) : ""], ["Caso", c ? NIVEL(c.nivel) + " " + esc(c.estado) : "Sin indicios"]], { clase: c && c.nivel === "Alta" ? "alerta" : "" }));
+  }
+  if ((m.gre || []).length) b.append(bloque(`Guías de remisión con esta máquina (${m.gre.length})`, "ruta", [], { clase: "ancho",
+    html: `<div class="guias">${m.gre.filter(i => D.guias[i]).map(i => guiaH(D.guias[i], "", (IDX.venta.get((m.ventas || [])[0]) || {}).f, i)).join("")}</div>` }));
+  const md = bloqueMismaDam(m.dam, m.k); if (md) b.append(md);
+  return f;
+}
+
+function vistaMaquinas(sec) {
+  sec.append(el("h2", {}, "Máquinas"),
+    el("p", { class: "nota" }, "Cada fila es una serie de maquinaria de una DAM de importación para el consumo. La columna «Control» resume la situación de su DAM en el cuaderno de la IA; al abrir la fila se ven los tributos, las NCN, las RI, los traslados y las otras máquinas de la misma DAM."));
+  const trs = D.traslados.filter(t => t.es_maq && t.f >= D.meta.desde);
+  if (trs.length) {
+    const tt = tarjeta("Traslados de maquinaria del periodo", "Expedientes del cuaderno de traslados con su máquina (DAM y serie) y la venta probable o enlazada. «ZTE a ZTE pasando por ZTC» es un tránsito, no una salida.");
+    tt.id = "traslados";
+    const g = el("div", { class: "traslados" });
+    for (const t of trs) {
+      const ventas = (t.prob || []).map(p => `<a href="#alertas" data-caso="${esc(p.cpe)}">${esc(folio(p.cpe))}</a> ${esc(((D.clientes[(IDX.venta.get(p.cpe) || {}).ruc] || {}).nombre || "").slice(0, 32))} (${p.dias >= 0 ? "+" : ""}${p.dias} d)`);
+      g.append(bloque(`${t.exp.split("-").slice(-2).join("-")} · ${fecha(t.f)}`, "camion", [
+        ["Tipo", esc(t.tipo) + (t.salida ? "" : ` <span class="etq">tránsito</span>`)],
+        ["Máquinas", t.maqs.length ? t.maqs.map(k => { const m = IDX.maq.get(k); return `${esc(k.replace("#", " serie "))}${m ? " · " + esc(m.cat.toLowerCase() + " " + m.modelo) + (m.usada ? " (usada)" : "") : ""}`; }).join("<br>") : `${f0(t.cant)} · ${esc(t.merc.toLowerCase())} (DAM ${esc((t.dams || []).join(", "))})`],
+        ["Monto", t.monto ? `S/ ${f0(t.monto)} <span class="etq">${esc(t.pago)}</span>` : ""], ["RI", t.ri ? `${esc(t.ri)} · ${fecha(t.ri_f)}` : ""],
+        ["Venta probable", ventas.join("<br>")], ["Observación", (t.obs || []).map(esc).join("<br>") + (t.dup ? ` <span class="etq">no se cuenta: repetido</span>` : "")],
+      ], { clase: (t.obs || []).length ? "pend" : t.salida ? "ok" : "" }));
+    }
+    tt.append(g); sec.append(tt);
+  }
+  if ((D.adjuntos || {})[XLSX_CONSULTAS]) sec.append(el("div", { class: "acc", style: "margin:0 0 16px" },
+    el("button", { class: "btn principal", type: "button", onclick: () => descargarAdjunto(XLSX_CONSULTAS), html: ic("descarga") + "Descargar Excel de consultas a otras intendencias" })));
+  const sinSerie = (D.control || {}).tras_sin_serie || [];
+  if (sinSerie.length) {
+    const ts = tarjeta(`Solicitudes de traslado sin serie (${f0(sinSerie.length)})`, "El traslado vale solo para las series que cita. Estas solicitudes no indican la serie de la DAM, así que no se enlazan con ninguna máquina: complételas en el cuaderno de control.");
+    ts.append(el("ul", { class: "nota" }, sinSerie.map(x => el("li", {}, `${x.exp} · ${fecha(x.f)} · ${x.tipo} · ${(x.merc || "").toLowerCase()} · DAM ${(x.dams || []).join(", ") || "s/d"}`))));
+    sec.append(ts);
+  }
+  const t = tarjeta(); sec.append(t);
+  t.append(leyendaMarcas(["usada", "dep", "exp", "tras", "sinreg", "venta"]));
+  const estado = m => ctlEstado((D.dams[m.dam] || {}).ctl, m.dest);
+  const resumenMaq = rs => `<span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span><span class="sub-g">CIF USD ${f0(rs.reduce((a, r) => a + (r.cif || 0), 0))}</span>` +
+    (rs.some(r => r.ventas.length) ? `<span class="sub-g">${rs.filter(r => r.ventas.length).length} con venta enlazada</span>` : "") + `</span>`;
+  const prioDam = k => { const d = D.dams[k] || {}, c = d.ctl; return !c ? (d.dest === "271" ? 0 : 2) : 1; };   // primero las que faltan en el cuaderno
+  const GRUPOS_MAQ = [
+    { id: "dam", t: "DAM", clave: r => r.dam, orden: (a, b) => prioDam(a.k) - prioDam(b.k) || ((D.dams[b.k] || {}).f || "").localeCompare((D.dams[a.k] || {}).f || ""),
+      cabecera: (k, rs) => cabDam(k, resumenMaq(rs)) },
+    { id: "mercancia", t: "Tipo de mercancía", clave: r => r.merc || "Otros", orden: (a, b) => MERC.indexOf(a.k) - MERC.indexOf(b.k),
+      cabecera: (k, rs) => `<b class="g">${esc(k)}</b>` + resumenMaq(rs) },
+    { id: "tipo", t: "Tipo de máquina", clave: r => r.cat, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${esc(rs[0].merc || "")}</span>` + resumenMaq(rs) },
+    { id: "destino", t: "Destino", clave: r => r.dest, texto: k => destT(k), cabecera: (k, rs) => `<b class="g">${esc(destT(k))}</b>` + resumenMaq(rs) },
+    { id: "control", t: "Control de la DAM", clave: estado, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${new Set(rs.map(r => r.dam)).size} DAM</span>` + resumenMaq(rs) },
+  ];
+  t.append(el("p", { class: "nota" }, "Solo se muestran las máquinas con beneficio (DAM con solicitud de regularización). Agrupe por DAM para ver su beneficio y sus solicitudes de traslado una sola vez por declaración, con todas sus máquinas debajo."));
+  tablaMaquinas = tabla(t, { id: "maquinas", grupos: GRUPOS_MAQ, ph: "Buscar PIN, motor, DAM, modelo…", porPag: 25, archivo: "maquinas.csv", filas: D.maquinas, detalle: fichaMaquina,
+    cols: [{ t: "Indicadores", v: r => marcasT(r.mk).join("; "), h: r => marcasH(r.mk) },
+      { t: "Máquina", v: r => `${r.cat} ${r.marca || ""} ${r.modelo || ""}`.trim(), largo: 1 },
+      { k: "pin", t: "PIN / serie", c: 1 }, { k: "anio", t: "Año", c: 1 },
+      { t: "DAM · serie", v: r => `${r.dam} · ${r.s}`, c: 1 }, { k: "f", t: "Fecha", f: fecha, c: 1 },
+      { k: "dest", t: "Destino", f: v => destT(v) },
+      { t: "Control", v: estado, h: r => { const c = (D.dams[r.dam] || {}).ctl; return `<span class="etq ${ctlClase(c, r.dest)}">${esc(ctlEstado(c, r.dest))}</span>`; } },
+      { t: "Venta", v: r => r.ventas.map(folio).join(", "), h: r => r.ventas.map(c => `<a href="#alertas" data-caso="${esc(c)}">${esc(folio(c))}</a>`).join(", ") || "–" },
+      { k: "cif", t: "CIF USD", n: 1, f: v => f0(v) }],
+    filtros: [{ t: "Destino", campo: "dest", valor: r => destT(r.dest) }, { t: "Tipo", campo: "cat", valor: r => r.cat },
+      { t: "Control", campo: "ctl", valor: estado }, { t: "Indicador", campo: "mk", valor: r => marcasT(r.mk), opciones: ["usada", "dep", "exp", "tras", "sinreg", "venta"].map(k => MARCAS[k].t) }] });
+}
+
+function fichaCliente(cl) {
+  const f = el("div", { class: "ficha" }), b = el("div", { class: "bloques" });
+  f.append(b);
+  b.append(bloqueComprador(cl));
+  const filas = cl.cpes.map(cpe => {
+    const v = IDX.venta.get(cpe), c = IDX.caso.get(cpe);
+    return `<li>${c ? `<a href="#alertas" data-caso="${esc(cpe)}">${esc(folio(cpe))}</a>` : esc(folio(cpe))} · ${fecha(v.f)} · ${esc(v.desc)} · ${montoH(v)}${c ? " · " + NIVEL(c.nivel) : ""}</li>`;
+  });
+  b.append(bloque(`Máquinas compradas (${cl.cpes.length})`, "maquinas", [], { html: `<ul>${filas.join("")}</ul>` }));
+  return f;
+}
+
+function vistaClientes(sec) {
+  sec.append(el("h2", {}, "Compradores de maquinaria"),
+    el("p", { class: "nota" }, "Solo quienes compraron maquinaria en el periodo (sin facturas anuladas ni anticipos). Domicilio fiscal y actividad del padrón y de la consulta múltiple de RUC; el domicilio es el vigente hoy."));
+  const t = tarjeta(); sec.append(t);
+  const mk = c => [c.zona === "ZTC" ? "ztc" : c.zona === "ZTE" ? "zte" : c.zona === "Extranjero" ? "ext" : "", c.tipo === "Entidad pública" ? "pub" : c.tipo === "Persona natural" ? "pn" : "",
+    c.rev ? "rev" : "", c.nuevo ? "nuevo" : "", c.no_habido ? "nohab" : "", c.n_igv ? "igv" : ""].filter(Boolean);
+  const filas = Object.values(D.clientes).map(c => ({ ...c, mk: mk(c) }));
+  t.append(leyendaMarcas(["ztc", "zte", "ext", "pub", "pn", "rev", "nuevo", "nohab", "igv"]));
+  const resumenCli = rs => `<span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "comprador" : "compradores"}</span><span class="sub-g">${f0(rs.reduce((a, r) => a + r.n, 0))} ventas</span>` +
+    (rs.some(r => r.alta) ? `${NIVEL("Alta")} ${rs.reduce((a, r) => a + r.alta, 0)}` : "") + (rs.some(r => r.media) ? ` ${NIVEL("Media")} ${rs.reduce((a, r) => a + r.media, 0)}` : "") + `</span>`;
+  const ordenCli = (a, b) => b.rs.reduce((x, r) => x + r.alta, 0) - a.rs.reduce((x, r) => x + r.alta, 0) || b.rs.length - a.rs.length;
+  const GRUPOS_CLI = [
+    { id: "zona", t: "Zona", clave: r => r.zona, orden: ordenCli, texto: zonaT, cabecera: (k, rs) => `<b class="g">${zonaH(k)}</b>` + resumenCli(rs) },
+    { id: "departamento", t: "Departamento", clave: r => r.dep || "Sin dato", orden: ordenCli, cabecera: (k, rs) => `<b class="g">${esc(k)}</b>` + resumenCli(rs) },
+    { id: "tipo", t: "Tipo de comprador", clave: r => r.tipo, orden: ordenCli, cabecera: (k, rs) => `<b class="g">${esc(k)}</b>` + resumenCli(rs) },
+  ];
+  tablaClientes = tabla(t, { id: "compradores", grupos: GRUPOS_CLI, ph: "Buscar comprador, RUC, actividad…", porPag: 25, archivo: "compradores.csv", filas, detalle: fichaCliente,
+    orden: { i: 6, d: -1 },
+    cols: [{ t: "Indicadores", v: r => marcasT(r.mk).join("; "), h: r => marcasH(r.mk) },
+      { k: "nombre", t: "Comprador", largo: 1 }, { k: "ruc", t: "RUC / doc.", c: 1 },
+      { k: "zona", t: "Zona", h: r => zonaH(r.zona), v: r => zonaT(r.zona) }, { k: "lugar", t: "Domicilio fiscal", largo: 1 },
+      { k: "actividad", t: "Actividad", largo: 1 }, { k: "n", t: "Máquinas", n: 1 }, { k: "n_igv", t: "Con IGV", n: 1 },
+      { t: "Casos", v: r => r.alta * 100 + r.media, h: r => r.alta || r.media ? `${r.alta ? NIVEL("Alta") + " " + r.alta : ""} ${r.media ? NIVEL("Media") + " " + r.media : ""}` : "–", csv: r => `alta ${r.alta}; media ${r.media}` },
+      { k: "usd", t: "USD", n: 1, f: v => v ? f0(v) : "–" }, { k: "pen", t: "S/", n: 1, f: v => v ? f0(v) : "–" }, { k: "ult", t: "Última compra", f: fecha, c: 1 }],
+    filtros: [{ t: "Zona", campo: "zona", valor: r => zonaT(r.zona) }, { t: "Tipo", campo: "tipo", valor: r => r.tipo },
+      { t: "Indicador", campo: "mk", valor: r => marcasT(r.mk), opciones: ["ztc", "zte", "ext", "pub", "pn", "rev", "nuevo", "nohab", "igv"].map(k => MARCAS[k].t) }] });
+}
+</script>
+</body>
+</html>

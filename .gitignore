@@ -1,0 +1,13 @@
+# Datos con reserva tributaria, salidas generadas y claves: nunca se versionan
+datos/
+*.json
+*.xlsx
+*.xlsm
+*.xls
+*.7z
+*.zip
+*.rar
+clave*
+__pycache__/
+# La página cifrada se publica en la rama gh-pages, no en la principal
+index.html
