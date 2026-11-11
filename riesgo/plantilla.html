@@ -1370,7 +1370,7 @@ function vistaSalidas(sec) {
   sec.append(ks);
   const t = tarjeta(); sec.append(t);
   if (!D.salidas.length) { t.append(el("p", { class: "nota" }, "Todavía no hay guías que lleven una máquina de la ZTE a la ZTC. Descargue guías con las listas de «Dónde buscar».")); return; }
-  t.append(el("p", { class: "nota", html: `Pruebas, en orden: ${PRUEBAS.map(([, tx]) => esc(tx.toLowerCase())).join(", ")}. ${pruebaIc(true)} cumple · ${pruebaIc(null)} falta averiguarlo · ${pruebaIc(false)} no cumple (descarta el caso).` }));
+  t.append(el("p", { class: "nota", html: `Pruebas, en orden: ${PRUEBAS.map(([, tx]) => esc(/^[A-ZÁÉÍÓÚÑ]{2,}/.test(tx) ? tx : tx.charAt(0).toLowerCase() + tx.slice(1))).join(", ")}. ${pruebaIc(true)} cumple · ${pruebaIc(null)} falta averiguarlo · ${pruebaIc(false)} no cumple (descarta el caso).` }));
   const GRUPOS_SAL = [
     { id: "estado", t: "Estado", clave: r => r.estado, orden: (a, b) => ORD_SAL.indexOf(a.k) - ORD_SAL.indexOf(b.k), cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span></span>` },
     { id: "quien", t: "Quién la movió", clave: r => r.mov.nombre || r.mov.ruc, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span></span>` },
@@ -1678,8 +1678,49 @@ function fichaMaquina(m) {
 }
 
 function vistaMaquinas(sec) {
+  const P = D.kpi.parque || {};
   sec.append(el("h2", {}, "Parque de máquinas con beneficio"),
-    el("p", { class: "nota" }, "Cada fila es una serie de maquinaria de una DAM de importación para el consumo. La columna «Control» resume la situación de su DAM en el cuaderno de la IA; al abrir la fila se ven los tributos, las NCN, las RI, los traslados y las otras máquinas de la misma DAM."));
+    el("p", { class: "nota" }, "Cada fila es una máquina importada con el beneficio (una serie de una DAM). Lo que importa aquí es quién la tiene y cuál es su último rastro en las guías: " +
+      "con el filtro «Rastro» se ven las que no tienen tenedor ni guía, que son las que faltan ubicar. Al abrir la fila se ven el beneficio y los traslados de su DAM, la venta, las guías y las otras máquinas de la misma DAM."));
+  const ks = el("div", { class: "kpis" });
+  ks.append(kpi("Máquinas con beneficio", f0(P.total || D.maquinas.length), "del importador, en el periodo"),
+    kpi(`<span class="etq ok">Con tenedor</span>`, f0(P.con_ten || 0), "la venta está enlazada por serie"),
+    kpi(`<span class="etq">Con guía</span>`, f0(P.con_rastro || 0), "alguna guía descargada la nombra"),
+    kpi(`<span class="etq pend">Sin rastro</span>`, f0(P.sin_rastro || 0), "sin tenedor ni guía: faltan ubicar"));
+  sec.append(ks);
+  const t = tarjeta(); sec.append(t);
+  t.append(leyendaMarcas(["sal", "sinrastro", "usada", "dep", "exp", "tras", "sinreg", "venta"]));
+  const estado = m => ctlEstado((D.dams[m.dam] || {}).ctl, m.dest);
+  const rastro = m => m.sal ? "Salió a la ZTC (ver Salidas)" : m.ten ? (m.ult ? "Con tenedor y guía" : "Con tenedor, sin guía") : m.ult ? "Con guía, sin tenedor" : "Sin tenedor ni guía";
+  const nomTen = m => m.ten ? ((D.clientes[m.ten] || {}).nombre || m.ten) : "";
+  const resumenMaq = rs => `<span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span><span class="sub-g">CIF USD ${f0(rs.reduce((a, r) => a + (r.cif || 0), 0))}</span>` +
+    (rs.some(r => r.ventas.length) ? `<span class="sub-g">${rs.filter(r => r.ventas.length).length} con venta enlazada</span>` : "") + `</span>`;
+  const prioDam = k => { const d = D.dams[k] || {}, c = d.ctl; return !c ? (d.dest === "271" ? 0 : 2) : 1; };   // primero las que faltan en el cuaderno
+  const GRUPOS_MAQ = [
+    { id: "dam", t: "DAM", clave: r => r.dam, orden: (a, b) => prioDam(a.k) - prioDam(b.k) || ((D.dams[b.k] || {}).f || "").localeCompare((D.dams[a.k] || {}).f || ""),
+      cabecera: (k, rs) => cabDam(k, resumenMaq(rs)) },
+    { id: "mercancia", t: "Tipo de mercancía", clave: r => r.merc || "Otros", orden: (a, b) => MERC.indexOf(a.k) - MERC.indexOf(b.k),
+      cabecera: (k, rs) => `<b class="g">${esc(k)}</b>` + resumenMaq(rs) },
+    { id: "tipo", t: "Tipo de máquina", clave: r => r.cat, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${esc(rs[0].merc || "")}</span>` + resumenMaq(rs) },
+    { id: "destino", t: "Destino", clave: r => r.dest, texto: k => destT(k), cabecera: (k, rs) => `<b class="g">${esc(destT(k))}</b>` + resumenMaq(rs) },
+    { id: "control", t: "Control de la DAM", clave: estado, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${new Set(rs.map(r => r.dam)).size} DAM</span>` + resumenMaq(rs) },
+  ];
+  t.append(el("p", { class: "nota" }, "Solo se muestran las máquinas con beneficio (DAM con solicitud de regularización). Agrupe por DAM para ver su beneficio y sus solicitudes de traslado una sola vez por declaración, con todas sus máquinas debajo."));
+  tablaMaquinas = tabla(t, { id: "maquinas", grupos: GRUPOS_MAQ, ph: "Buscar PIN, motor, DAM, modelo…", porPag: 25, archivo: "maquinas.csv", filas: D.maquinas, detalle: fichaMaquina,
+    cols: [{ t: "Indicadores", v: r => marcasT(r.mk).join("; "), h: r => marcasH(r.mk) },
+      { t: "Máquina", v: r => `${r.cat} ${r.marca || ""} ${r.modelo || ""}`.trim(), largo: 1 },
+      { k: "pin", t: "PIN / serie", c: 1 },
+      { t: "Tenedor", v: nomTen, largo: 1, h: r => r.ten ? `<a href="#clientes" data-tenedor="${esc(r.ten)}">${esc(nomTen(r))}</a>` : `<span class="etq pend">sin identificar</span>` },
+      { t: "Último rastro", v: r => r.ult ? r.ult.f : "", largo: 1, h: r => r.ult ? `${fecha(r.ult.f)} · ${esc(r.ult.lugar)} ${zonaH(r.ult.zona)}` : "–", csv: r => r.ult ? `${r.ult.f} ${r.ult.lugar} (${r.ult.zona})` : "" },
+      { k: "edad", t: "Antigüedad (años)", n: 1, f: v => v == null ? "" : NF1.format(v) },
+      { t: "DAM · serie", v: r => `${r.dam} · ${r.s}`, c: 1 }, { k: "f", t: "Fecha", f: fecha, c: 1 },
+      { k: "dest", t: "Destino", f: v => destT(v) },
+      { t: "Control", v: estado, h: r => { const c = (D.dams[r.dam] || {}).ctl; return `<span class="etq ${ctlClase(c, r.dest)}">${esc(ctlEstado(c, r.dest))}</span>`; } },
+      { t: "Venta", v: r => r.ventas.map(folio).join(", "), h: r => r.ventas.map(c => `<a href="#alertas" data-caso="${esc(c)}">${esc(folio(c))}</a>`).join(", ") || "–" },
+      { k: "anio", t: "Año de fabricación", c: 1 },
+      { k: "cif", t: "CIF USD", n: 1, f: v => f0(v) }],
+    filtros: [{ t: "Rastro", campo: "rastro", valor: rastro }, { t: "Destino", campo: "dest", valor: r => destT(r.dest) }, { t: "Tipo", campo: "cat", valor: r => r.cat },
+      { t: "Control", campo: "ctl", valor: estado }, { t: "Indicador", campo: "mk", valor: r => marcasT(r.mk), opciones: ["sal", "sinrastro", "usada", "dep", "exp", "tras", "sinreg", "venta"].filter(k => D.maquinas.some(m => (m.mk || []).includes(k))).map(k => MARCAS[k].t) }] });
   const trs = D.traslados.filter(t => t.es_maq && t.f >= D.meta.desde);
   if (trs.length) {
     const tt = tarjeta("Traslados de maquinaria del periodo", "Expedientes del cuaderno de traslados con su máquina (DAM y serie) y la venta probable o enlazada. «ZTE a ZTE pasando por ZTC» es un tránsito, no una salida.");
@@ -1704,38 +1745,6 @@ function vistaMaquinas(sec) {
     ts.append(el("ul", { class: "nota" }, sinSerie.map(x => el("li", {}, `${x.exp} · ${fecha(x.f)} · ${x.tipo} · ${(x.merc || "").toLowerCase()} · DAM ${(x.dams || []).join(", ") || "s/d"}`))));
     sec.append(ts);
   }
-  const t = tarjeta(); sec.append(t);
-  t.append(leyendaMarcas(["sal", "sinrastro", "usada", "dep", "exp", "tras", "sinreg", "venta"]));
-  const estado = m => ctlEstado((D.dams[m.dam] || {}).ctl, m.dest);
-  const rastro = m => m.sal ? "Salió a la ZTC (ver Salidas)" : m.ten ? (m.ult ? "Con tenedor y guía" : "Con tenedor, sin guía") : m.ult ? "Con guía, sin tenedor" : "Sin tenedor ni guía";
-  const nomTen = m => m.ten ? ((D.clientes[m.ten] || {}).nombre || m.ten) : "";
-  const resumenMaq = rs => `<span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span><span class="sub-g">CIF USD ${f0(rs.reduce((a, r) => a + (r.cif || 0), 0))}</span>` +
-    (rs.some(r => r.ventas.length) ? `<span class="sub-g">${rs.filter(r => r.ventas.length).length} con venta enlazada</span>` : "") + `</span>`;
-  const prioDam = k => { const d = D.dams[k] || {}, c = d.ctl; return !c ? (d.dest === "271" ? 0 : 2) : 1; };   // primero las que faltan en el cuaderno
-  const GRUPOS_MAQ = [
-    { id: "dam", t: "DAM", clave: r => r.dam, orden: (a, b) => prioDam(a.k) - prioDam(b.k) || ((D.dams[b.k] || {}).f || "").localeCompare((D.dams[a.k] || {}).f || ""),
-      cabecera: (k, rs) => cabDam(k, resumenMaq(rs)) },
-    { id: "mercancia", t: "Tipo de mercancía", clave: r => r.merc || "Otros", orden: (a, b) => MERC.indexOf(a.k) - MERC.indexOf(b.k),
-      cabecera: (k, rs) => `<b class="g">${esc(k)}</b>` + resumenMaq(rs) },
-    { id: "tipo", t: "Tipo de máquina", clave: r => r.cat, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${esc(rs[0].merc || "")}</span>` + resumenMaq(rs) },
-    { id: "destino", t: "Destino", clave: r => r.dest, texto: k => destT(k), cabecera: (k, rs) => `<b class="g">${esc(destT(k))}</b>` + resumenMaq(rs) },
-    { id: "control", t: "Control de la DAM", clave: estado, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="sub-g">${new Set(rs.map(r => r.dam)).size} DAM</span>` + resumenMaq(rs) },
-  ];
-  t.append(el("p", { class: "nota" }, "Solo se muestran las máquinas con beneficio (DAM con solicitud de regularización). Agrupe por DAM para ver su beneficio y sus solicitudes de traslado una sola vez por declaración, con todas sus máquinas debajo."));
-  tablaMaquinas = tabla(t, { id: "maquinas", grupos: GRUPOS_MAQ, ph: "Buscar PIN, motor, DAM, modelo…", porPag: 25, archivo: "maquinas.csv", filas: D.maquinas, detalle: fichaMaquina,
-    cols: [{ t: "Indicadores", v: r => marcasT(r.mk).join("; "), h: r => marcasH(r.mk) },
-      { t: "Máquina", v: r => `${r.cat} ${r.marca || ""} ${r.modelo || ""}`.trim(), largo: 1 },
-      { k: "pin", t: "PIN / serie", c: 1 }, { k: "anio", t: "Año", c: 1 },
-      { t: "DAM · serie", v: r => `${r.dam} · ${r.s}`, c: 1 }, { k: "f", t: "Fecha", f: fecha, c: 1 },
-      { k: "dest", t: "Destino", f: v => destT(v) },
-      { t: "Control", v: estado, h: r => { const c = (D.dams[r.dam] || {}).ctl; return `<span class="etq ${ctlClase(c, r.dest)}">${esc(ctlEstado(c, r.dest))}</span>`; } },
-      { t: "Venta", v: r => r.ventas.map(folio).join(", "), h: r => r.ventas.map(c => `<a href="#alertas" data-caso="${esc(c)}">${esc(folio(c))}</a>`).join(", ") || "–" },
-      { t: "Tenedor", v: nomTen, largo: 1, h: r => r.ten ? `<a href="#clientes" data-tenedor="${esc(r.ten)}">${esc(nomTen(r))}</a>` : `<span class="etq pend">sin identificar</span>` },
-      { t: "Último rastro", v: r => r.ult ? r.ult.f : "", largo: 1, h: r => r.ult ? `${fecha(r.ult.f)} · ${esc(r.ult.lugar)} ${zonaH(r.ult.zona)}` : "–", csv: r => r.ult ? `${r.ult.f} ${r.ult.lugar} (${r.ult.zona})` : "" },
-      { k: "edad", t: "Años", n: 1, f: v => v == null ? "" : NF1.format(v) },
-      { k: "cif", t: "CIF USD", n: 1, f: v => f0(v) }],
-    filtros: [{ t: "Rastro", campo: "rastro", valor: rastro }, { t: "Destino", campo: "dest", valor: r => destT(r.dest) }, { t: "Tipo", campo: "cat", valor: r => r.cat },
-      { t: "Control", campo: "ctl", valor: estado }, { t: "Indicador", campo: "mk", valor: r => marcasT(r.mk), opciones: ["sal", "sinrastro", "usada", "dep", "exp", "tras", "sinreg", "venta"].filter(k => D.maquinas.some(m => (m.mk || []).includes(k))).map(k => MARCAS[k].t) }] });
 }
 
 function fichaCliente(cl) {
