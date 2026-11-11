@@ -1,6 +1,6 @@
 # Tablero de gestión de riesgo
 
-Página para el Equipo de Gestión de Riesgo de la Intendencia de Aduana de Tarapoto. Sigue la maquinaria que un importador trae con destino a la Amazonía y su venta: cruza las DAM con los comprobantes emitidos, el domicilio fiscal de los compradores, los XML de las facturas el cuaderno de control de la intendencia (beneficio de cada DAM y solicitudes de traslado) y las guías de remisión.
+Página para el Equipo de Gestión de Riesgo de la Intendencia de Aduana de Tarapoto. **Misión:** encontrar las máquinas importadas con el beneficio de la Amazonía que salieron de la ZTE a la ZTC sin solicitud de traslado, con 4 años o menos desde su importación, y reunir las pruebas para actuar. Cruza las guías de remisión con las DAM, los comprobantes emitidos, los XML de las facturas, el domicilio de los compradores y el cuaderno de control de la intendencia.
 
 **Página publicada:** https://ia-tarapotodev.github.io/analisis-maquinaria/ (requiere clave de acceso).
 
@@ -10,16 +10,44 @@ Los datos de origen tienen reserva tributaria (art. 85 del Código Tributario) y
 
 ## Cómo está organizado
 
-La unidad de seguimiento es la **máquina** (DAM y serie). Cada venta de maquinaria con indicios de salida de la zona del beneficio es un **caso**; al abrirlo se ve todo lo conectado: la venta, la cadena de comprobantes (bajas, notas de crédito, reemisiones y anticipos), la máquina enlazada por su número de serie, el control de su DAM y las otras máquinas de la misma DAM.
+El importador casi siempre cumple al vender: entrega dentro de la ZTE o pide el traslado. La salida la hace después el comprador (constructoras, transportistas y empresas de alquiler llevan sus máquinas a donde tengan obra) y ningún comprador pide traslados. Por eso el tablero parte de la **salida** que muestra una guía, de cualquier emisor, y no de la venta.
 
 | Pestaña | Qué muestra |
 |---|---|
-| Resumen | Casos por nivel, máquinas importadas, ventas por zona del comprador, control de la IA, **patrones**, comprobantes por descargar, **Excel de consultas a otras intendencias** y **calidad de los datos** (confiable, con límites, descartado) |
-| Alertas | Lista de casos con íconos, filtros y CSV, que se puede **agrupar** por comprador, máquina (serie), DAM, tipo de mercancía, tipo de máquina, departamento del comprador, traslado o estado. Cada fila se abre en una ficha con «Ver factura» (cuando hay XML), **«Buscar guías»** y los datos para buscar el comprobante en el portal del emisor. Arriba, la lista de comprobantes por descargar y las **listas de guías de remisión** para el extractor de GRE |
-| Máquinas | Solicitudes de traslado de maquinaria del periodo con su venta probable, las solicitudes de traslado sin serie (para completar en el cuaderno) y el registro de máquinas con beneficio. Agrupado por DAM, la cabecera de cada grupo muestra una sola vez su beneficio y sus solicitudes de traslado |
-| Clientes | Compradores de maquinaria: domicilio fiscal, actividad, máquinas compradas y casos; se agrupan por zona, departamento o tipo de comprador |
+| Resumen | La misión, las salidas detectadas por estado, la cola de búsqueda, el parque con beneficio, los tenedores con más riesgo, los **patrones**, el Excel de consultas y la **calidad de los datos** |
+| Salidas | Un **expediente por máquina** que una guía lleva de la ZTE a la ZTC (del importador, del comprador o de un tercero). Muestra las pruebas, la última ubicación conocida, a quién requerir, los pasos que siguen, un borrador de requerimiento y las guías |
+| Buscar | La **cola de búsqueda**, de la que más rinde a la que menos, con el botón que copia la lista para el extractor de GRE; los transportistas que ya llevaron máquinas; los otros importadores con maquinaria y beneficio (del cuaderno); las listas de rutina, y dónde queda el rastro cuando no hay guía |
+| Parque | Las máquinas con beneficio del importador: su tenedor (si la venta está enlazada por serie), su último rastro en las guías y su antigüedad. Filtro «Rastro» para ver las que no tienen tenedor ni guía |
+| Tenedores | Los compradores, ordenados por el riesgo de que muevan la máquina a la ZTC, con la parte del tiempo desde la compra que tiene guías consultadas y el botón para buscar sus guías |
+| Ventas | Las ventas del importador con indicios (antes «Alertas»): casos por nivel, con «Ver factura», «Buscar guías» y la cadena de comprobantes |
 
 La agrupación elegida en cada pestaña se recuerda en el navegador de quien la usa.
+
+### Salidas: el expediente y sus pruebas
+
+Cada guía con partida en la ZTE y llegada en la ZTC cuyos bienes nombran una máquina (excavadora, retroexcavadora, cargador, minicargador, motoniveladora, rodillo, tractor, grupo electrógeno o motor marino) abre o alimenta un expediente. La máquina se identifica por la serie de la guía; si la guía cita una factura del importador, por la serie del XML; las guías del transportista heredan los bienes de la guía que sustentan.
+
+| Prueba | De dónde sale |
+|---|---|
+| Serie de la máquina | El rótulo «SERIE …» de la guía o la última palabra de 8 o más caracteres con letras y números |
+| DAM con beneficio | Las DAM del importador (por PIN o motor), la consulta del equipo por serie o la hoja «Salidas por verificar» del Excel |
+| 4 años o menos al salir | Fecha (o año) de la DAM frente a la fecha de la guía |
+| Sin solicitud de traslado | El cuaderno de traslados (por DAM y serie). Si la máquina partió de otra circunscripción, queda por confirmar en esa intendencia |
+| Guía vigente a la ZTC | Guía emitida y no dada de baja. Si solo hay guías dadas de baja, el expediente queda como indicio |
+
+Estados: **Caso armado** (las cinco pruebas: falta ubicar y verificar la máquina), **Indicio: guía dada de baja**, **Por completar** (dice qué falta y dónde conseguirlo), **Regresó a la ZTE** (una guía posterior la trae de vuelta) y **Descartada** (con solicitud de traslado, sin beneficio o con más de 4 años). La última ubicación es la llegada de la guía más reciente que nombra la máquina; si las guías posteriores del tenedor ya se consultaron y ninguna la nombra, el expediente lo dice.
+
+### Tenedores: puntaje de riesgo
+
+Suma: ya movió maquinaria a la ZTC (4); guía a la ZTC dada de baja (3); domicilio fuera de la ZTE o mudado (3); zona de frontera con la ZTC, es decir Cajamarca, Huánuco, Utcubamba, Bagua, Tocache o Padre Abad (2); alquiler de maquinaria o consorcio (2); constructora o transporte (1); dos o más máquinas sin IGV (1, o 2 desde cuatro), y RUC reciente o no habido (1). La cobertura mide qué parte del tiempo desde la primera compra tiene guías consultadas del RUC como remitente, según las búsquedas de cada descarga del extractor.
+
+### Cola de búsqueda
+
+1. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, desde 60 antes de la primera conocida hasta 40 después de la última.
+2. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
+3. **Tenedores con más riesgo** sin guías consultadas desde la compra.
+4. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.
+5. **Excel de consultas**: lo que solo se puede ver en el sistema.
 
 ### Control de la DAM (cuaderno de la IA)
 
@@ -39,13 +67,16 @@ El tablero no consulta a SUNAT: arma listas de búsqueda que se copian y se pega
 
 | Botón | Qué busca |
 |---|---|
-| **Lista del día** (pestaña Alertas) | Ayer y hoy: los compradores **reincidentes** (con al menos un caso alto o medio) como remitentes y destinatarios, el importador como remitente y destinatario, y los **transportistas vigilados** (guías de remitente, transportista y por eventos) |
-| **Buscar guías** (ficha de cada caso) | Las guías del comprador como destinatario y como remitente desde 3 días antes hasta 15 días después de la venta, y las guías citadas en la factura (XML), consultadas directo por su número |
-| **Guías de los casos altos** (pestaña Alertas) | Lo mismo que «Buscar guías», para todos los casos de nivel alto a la vez |
+| **Copiar la lista para el extractor** (pestaña Buscar, cola de búsqueda) | La búsqueda de cada paso de la cola: las guías de máquinas del importador que faltan (consulta directa por número), las guías posteriores de quien movió o recibió una máquina que ya salió, y las guías como remitente de los tenedores con más riesgo |
+| **Seguir la máquina** (ficha de cada salida) | Las guías como remitente del tenedor y de quien recibió la máquina, desde 3 días antes de la salida hasta hoy, si aún no están consultadas |
+| **Lista** (tablas de Buscar y ficha de cada tenedor) | Las guías de ese RUC como remitente: desde su primera compra (tenedor), del último año (otro importador) o de los últimos dos años (transportista) |
+| **Lista del día** (pestaña Buscar, «Listas de rutina») | Ayer y hoy: los compradores **reincidentes** (con al menos un caso alto o medio) como remitentes y destinatarios, el importador como remitente y destinatario, y los **transportistas vigilados** (guías de remitente, transportista y por eventos) |
+| **Buscar guías** (ficha de cada venta) | Las guías del comprador como destinatario y como remitente desde 3 días antes hasta 15 días después de la venta, y las guías citadas en la factura (XML), consultadas directo por su número |
+| **Guías de los casos altos** (pestaña Buscar, «Listas de rutina») | Lo mismo que «Buscar guías», para todas las ventas de nivel alto a la vez |
 
 Si el navegador no deja copiar, la lista se descarga como archivo y se abre en el extractor con «Abrir archivo de lista». El extractor devuelve un JSON (para integrarlo al tablero) y un Excel (para revisar); ambos tienen reserva tributaria y no se versionan sin cifrar.
 
-El JSON vuelve al generador con `--guias` (uno o más archivos; también acepta el Excel del extractor; una guía repetida se lee una sola vez). Cada guía se enlaza con su venta:
+El JSON vuelve al generador con `--guias` (uno o más archivos; también acepta el Excel del extractor; una guía repetida se lee una sola vez). Todas las guías se revisan para detectar salidas (ver «Salidas»). Además, cada guía se enlaza con la venta del importador que le corresponde:
 
 | Enlace | Cuándo |
 |---|---|
@@ -64,7 +95,7 @@ La zona de la partida y de la llegada sale del ubigeo de cada dirección. En el 
 - Para ubicar la máquina en la ZTE solo cuentan las guías desde 3 días antes de la venta.
 - **Regreso a la ZTE**: si después de una guía a la ZTC hay otra que trae la máquina de vuelta a la ZTE, la ficha sugiere vigilar la anulación de la venta, un pedido de devolución de lo pagado por el traslado o una nueva venta sin IGV.
 
-La ficha de cada caso y de cada máquina muestra sus guías (partida y llegada con su zona, emisor, destinatario, motivo, placas, bienes y cómo se enlazó) y la cronología las incluye. Solo se guardan las guías enlazadas; las claves de todas las demás quedan como «conocidas», para que las listas nuevas no las descarguen otra vez. Una guía muestra a dónde se llevó la máquina, no dónde está hoy, y la llegada la declara quien la emite.
+La ficha de cada caso y de cada máquina muestra sus guías (partida y llegada con su zona, emisor, destinatario, motivo, placas, bienes y cómo se enlazó) y la cronología las incluye. Solo se guardan las guías enlazadas a una venta o a una salida; las claves de todas las demás quedan como «conocidas», para que las listas nuevas no las descarguen otra vez. De cada descarga se guarda además qué RUC y qué fechas se consultaron completos: con eso el tablero calcula la cobertura de cada tenedor, importador y transportista. Una guía muestra a dónde se llevó la máquina, no dónde está hoy, y la llegada la declara quien la emite.
 
 ## Criterios de los casos
 
@@ -106,16 +137,18 @@ CLAVE_TABLERO_ARCHIVO=/ruta/privada/clave.txt \
 # 3. Publicar: copiar index.html a la raíz de la rama gh-pages (index.html)
 ```
 
-### Consultas a otras intendencias (Excel)
+### Excel de consultas
 
-El cuaderno de la IA Tarapoto solo cubre las DAM con destino Tarapoto. `consultas_xlsx.py` arma un Excel de trabajo con lo que conviene consultar en el sistema: las DAM con maquinaria y destino en otra intendencia (modalidad de pago o garantía, estado de la solicitud, diligencia, RI, NCN y traslado), las series vendidas que no están en las DAM del periodo y el PIN de cada serie de las DAM anteriores al periodo que tienen traslados de maquinaria. Las celdas grises vienen del tablero y las amarillas se completan.
+La primera hoja, **«Salidas por verificar»**, lista las máquinas que una guía lleva a la ZTC y que no se descartan solas. El equipo busca la serie en el sistema y anota: la serie (si la guía no la trae), la DAM, su año o fecha, el importador, si tiene el beneficio, si tiene solicitud de traslado, el expediente y la ubicación verificada. Con «Sí» en beneficio, «No» en traslado y 4 años o menos, el expediente pasa a caso armado. Cada fila se identifica por la clave de su guía principal, así que lo completado se conserva con `--previo`.
+
+Las otras hojas vienen de que el cuaderno de la IA Tarapoto solo cubre las DAM con destino Tarapoto. `consultas_xlsx.py` reúne en el mismo Excel lo demás que conviene consultar en el sistema: las DAM con maquinaria y destino en otra intendencia (modalidad de pago o garantía, estado de la solicitud, diligencia, RI, NCN y traslado), las series vendidas que no están en las DAM del periodo y el PIN de cada serie de las DAM anteriores al periodo que tienen traslados de maquinaria. Las celdas grises vienen del tablero y las amarillas se completan.
 
 ```bash
 # Arma el Excel (con --previo conserva lo que el equipo ya completó)
 python3 -I riesgo/scripts/consultas_xlsx.py /ruta/privada/datos.json /ruta/privada/consultas_otras_intendencias.xlsx \
   [--previo /ruta/privada/consultas_completadas.xlsx]
 
-# Lo adjunta cifrado a la página: se descarga desde Resumen o Máquinas una vez abierta con la clave
+# Lo adjunta cifrado a la página: se descarga desde Resumen, Buscar o Parque una vez abierta con la clave
 CLAVE_TABLERO_ARCHIVO=/ruta/privada/clave.txt python3 -I riesgo/scripts/cifrar.py /ruta/privada/datos.json riesgo/plantilla.html \
   /ruta/privada/index.html --adjunto /ruta/privada/consultas_otras_intendencias.xlsx
 

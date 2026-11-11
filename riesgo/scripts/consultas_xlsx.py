@@ -12,6 +12,8 @@ El libro es una lista de trabajo para el equipo de gestión de riesgo:
   - Series por ubicar: máquinas vendidas cuya serie no está en las DAM del importador del periodo.
   - DAM 2024 de traslados: DAM anteriores al periodo con traslados de maquinaria; el PIN de cada serie
     confirma o descarta la venta probable.
+  - Salidas por verificar: máquinas que una guía de remisión lleva de la ZTE a la ZTC. El equipo anota la DAM
+    de la serie, si tiene el beneficio, si tiene solicitud de traslado y dónde se verificó la máquina.
 Las celdas grises vienen del tablero y las amarillas se completan. El libro completado se devuelve al
 generador con «generar_datos.py ... --consultas consultas.xlsx».
 
@@ -29,6 +31,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
 HOJA_DAM, HOJA_SERIES, HOJA_2024 = "DAM otras intendencias", "Series por ubicar", "DAM 2024 de traslados"
+HOJA_SALIDAS = "Salidas por verificar"
 LISTAS = {
     "modalidad": ["Cancelada", "Garantía art. 160", "Carta fianza", "Sin desgravación", "Otra"],
     "moneda": ["S/", "USD"],
@@ -36,6 +39,7 @@ LISTAS = {
     "diligencia": ["Conforme", "No conforme", "Pendiente", "Sin diligencia"],
     "busqueda": ["DAM encontrada", "Importada por otro importador", "Compra local", "No encontrada"],
     "intendencia": ["Tarapoto", "Pucallpa", "Puerto Maldonado", "Iquitos", "Sin destino amazónico"],
+    "si_no": ["Sí", "No"],
 }
 FUENTE = "Arial"
 GRIS = PatternFill("solid", fgColor="F2F2F2")
@@ -56,7 +60,8 @@ def previo_de(ruta):
     """Celdas amarillas de un libro ya completado: {hoja: {clave de la fila: {columna: valor}}}."""
     from openpyxl import load_workbook
     wb = load_workbook(ruta, data_only=True)
-    claves = {HOJA_DAM: ("DAM",), HOJA_SERIES: ("Factura",), HOJA_2024: ("Traslado", "DAM", "Serie de la DAM")}
+    claves = {HOJA_DAM: ("DAM",), HOJA_SERIES: ("Factura",), HOJA_2024: ("Traslado", "DAM", "Serie de la DAM"),
+              HOJA_SALIDAS: ("Guía principal (clave)",)}
     out = {}
     for hoja, campos in claves.items():
         if hoja not in wb.sheetnames:
@@ -210,10 +215,34 @@ def main(r_json, salida, r_previo=None):
               ("¿Coincide con una factura?", 12, "formula"), ("Observaciones", 30, "llenar")]
     formulas_t = {"¿Coincide con una factura?": '=IF(H{f}="","",IF(ISNUMBER(SEARCH(TRIM(H{f}),G{f})),"Sí","No"))'}
 
+    # ---------- Salidas detectadas en las guías: lo que falta para armar el caso ----------
+    filas_x = []
+    PRIO_X = {"Caso armado": 1, "Indicio: guía dada de baja": 1, "Por completar": 2, "Regresó a la ZTE": 3, "Descartada": 4}
+    nombre_ruc = lambda q: f"{q['nombre'].strip()} ({q['ruc']})" if q.get("ruc") else q.get("nombre", "")
+    for x in d.get("salidas", []):
+        if x["estado"] == "Descartada" and not x.get("ver"):
+            continue                        # descartadas por los datos del tablero (con traslado o sin beneficio): no hay nada que completar
+        nums = ", ".join(d["guias"][i]["num"] for i in x["gs"][:6]) + (f" y {len(x['gs']) - 6} más" if len(x["gs"]) > 6 else "")
+        filas_x.append([PRIO_X.get(x["estado"], 3), x["id"], x["estado"], f"{x['maq']['cat']}: {x['maq']['desc']}"[:150], x["maq"]["serie"],
+                        nombre_ruc(x["mov"]), nombre_ruc(x["rec"]), fecha(x["f"]), x["p"],
+                        f"{x['ubic']['lugar']}" + (f" · {x['ubic']['dir']}" if x["ubic"]["dir"] else "") + f" (al {fx(x['ubic']['f'])})",
+                        nums, x["clave"], ("Falta " + "; ".join(x["falta"])) if x["falta"] else x["motivo"],
+                        (x["dam"]["dam"] + (" serie " + x["dam"]["serie"] if x["dam"]["serie"] else "")) if x["dam"]["fuente"] not in ("", "Verificación del equipo") else ""])
+    filas_x.sort(key=lambda r: (r[0], r[1]))
+    cols_x = [("Prioridad", 9, "dato"), ("Expediente", 10, "dato"), ("Estado", 16, "dato"), ("Máquina", 40, "dato"), ("Serie de la máquina (guía)", 20, "dato"),
+              ("Quién la movió", 32, "dato"), ("Quién la recibió", 32, "dato"), ("Fecha de salida", 12, "dato"), ("Partida", 24, "dato"),
+              ("Última ubicación conocida", 44, "dato"), ("Guías", 26, "dato"), ("Guía principal (clave)", 26, "dato"), ("Qué falta", 40, "dato"),
+              ("DAM según el tablero", 22, "dato"),
+              ("Serie (si la guía no la trae)", 20, "llenar"), ("DAM", 20, "llenar"), ("Serie de la DAM", 9, "llenar"), ("Año o fecha de la DAM", 13, "llenar"),
+              ("Importador", 28, "llenar"), ("¿Con beneficio?", 11, "llenar"), ("¿Tiene solicitud de traslado?", 12, "llenar"),
+              ("Expediente de traslado", 22, "llenar"), ("Ubicación verificada (dirección y fecha)", 36, "llenar"), ("Observaciones", 40, "llenar")]
+    listas_x = {"¿Con beneficio?": "si_no", "¿Tiene solicitud de traslado?": "si_no"}
+
     # ---------- Libro ----------
     wb = Workbook()
     ws = wb.active
     ws.title = "Instrucciones"
+    hoja_tabla(wb, HOJA_SALIDAS, cols_x, filas_x, listas_x, previo=previo.get(HOJA_SALIDAS), clave=lambda r: (str(r[11]),))
     hoja_tabla(wb, HOJA_DAM, cols_dam, filas, listas_dam, previo=previo.get(HOJA_DAM), clave=lambda r: (str(r[2]),))
     hoja_tabla(wb, HOJA_SERIES, cols_s, filas_s, listas_s, previo=previo.get(HOJA_SERIES), clave=lambda r: (str(r[1]),))
     wt = hoja_tabla(wb, HOJA_2024, cols_t, filas_t, None, formulas_t, previo=previo.get(HOJA_2024), clave=lambda r: (str(r[0]), str(r[3]), str(r[4])))
@@ -242,6 +271,9 @@ def main(r_json, salida, r_previo=None):
          "cuando tenga tiempo; puede dejar filas en blanco.", f()),
         ("5. Devuelva el archivo completado por el chat del tablero, no por el repositorio. El tablero lo incorpora: la ficha de "
          "cada máquina mostrará el control de su DAM, y los casos se confirman o se descartan.", f()),
+        ("6. Hoja «Salidas por verificar» (la primera): cada fila es una máquina que una guía lleva de la ZTE a la ZTC. Busque su serie en el "
+         "sistema y anote la DAM, el año o la fecha, el importador, si tiene el beneficio y si tiene solicitud de traslado. Con «Sí» en beneficio "
+         "y «No» en traslado, y 4 años o menos desde la importación, el expediente pasa a caso armado.", f()),
         ("", None),
         ("Leyenda", f(size=12, bold=True)),
     ]
@@ -254,27 +286,27 @@ def main(r_json, salida, r_previo=None):
         if largo:
             ws.merge_cells(start_row=i, start_column=1, end_row=i, end_column=8)
             ws.row_dimensions[i].height = 15 * (1 + len(texto) // 140)
-    ws["A12"], ws["B12"] = "Dato del tablero (no cambiar)", None
-    ws["A12"].fill, ws["A12"].font = GRIS, f()
-    ws["A13"] = "Celda para completar"
-    ws["A13"].fill, ws["A13"].font = AMARILLO, f()
-    ws["A14"] = "Se calcula sola"
-    ws["A14"].font = f(bold=True)
+    ws["A13"], ws["B13"] = "Dato del tablero (no cambiar)", None
+    ws["A13"].fill, ws["A13"].font = GRIS, f()
+    ws["A14"] = "Celda para completar"
+    ws["A14"].fill, ws["A14"].font = AMARILLO, f()
+    ws["A15"] = "Se calcula sola"
+    ws["A15"].font = f(bold=True)
 
     ws["A16"] = "Avance"
     ws["A16"].font = f(size=12, bold=True)
     for j, t in enumerate(["Hoja", "Filas", "Completadas", "Avance"], 1):
         c = ws.cell(row=17, column=j, value=t)
         c.font, c.fill = f(bold=True, color="FFFFFF"), CABECERA
-    avance = [(HOJA_DAM, "C", "N"), (HOJA_SERIES, "B", "K"), (HOJA_2024, "A", "H")]
+    avance = [(HOJA_SALIDAS, "B", "T"), (HOJA_DAM, "C", "N"), (HOJA_SERIES, "B", "K"), (HOJA_2024, "A", "H")]
     for i, (h, col_id, col_llena) in enumerate(avance, 18):
         ws.cell(row=i, column=1, value=h).font = f()
         ws.cell(row=i, column=2, value=f"=COUNTA('{h}'!{col_id}2:{col_id}1000)").font = f()
         ws.cell(row=i, column=3, value=f"=COUNTA('{h}'!{col_llena}2:{col_llena}1000)").font = f()
         c = ws.cell(row=i, column=4, value=f"=IF(B{i}=0,0,C{i}/B{i})")
         c.font, c.number_format = f(), "0%"
-    ws["A21"] = "Completadas: filas con la primera celda amarilla llena (Modalidad, Resultado de la búsqueda o PIN)."
-    ws["A21"].font = f(italic=True, color="595959")
+    ws["A22"] = "Completadas: filas con la celda clave llena (¿Con beneficio?, Modalidad, Resultado de la búsqueda o PIN)."
+    ws["A22"].font = f(italic=True, color="595959")
 
     ws["A23"] = "Ejemplo de una fila completada en «DAM otras intendencias» (valores de muestra, no son datos reales)"
     ws["A23"].font = f(size=12, bold=True)
@@ -298,12 +330,13 @@ def main(r_json, salida, r_previo=None):
     ws["A27"] = "Valores de las listas"
     ws["A27"].font = f(size=12, bold=True)
     for i, (t, lista) in enumerate([("Modalidad", "modalidad"), ("Estado de la solicitud", "solicitud"), ("Resultado de la diligencia", "diligencia"),
-                                    ("Resultado de la búsqueda", "busqueda"), ("Intendencia de destino", "intendencia")], 28):
+                                    ("Resultado de la búsqueda", "busqueda"), ("Intendencia de destino", "intendencia"),
+                                    ("¿Con beneficio? y ¿Tiene solicitud de traslado?", "si_no")], 28):
         ws.cell(row=i, column=1, value=t).font = f(bold=True)
         ws.cell(row=i, column=2, value=" · ".join(LISTAS[lista])).font = f()
     wb.save(salida)
-    print(f"OK {salida}: {len(filas)} DAM ({sum(1 for r in filas if r[0] == 1)} de prioridad 1), {len(filas_s)} series por ubicar, "
-          f"{len(filas_t)} series de DAM 2024")
+    print(f"OK {salida}: {len(filas_x)} salidas por verificar, {len(filas)} DAM ({sum(1 for r in filas if r[0] == 1)} de prioridad 1), "
+          f"{len(filas_s)} series por ubicar, {len(filas_t)} series de DAM 2024")
 
 
 if __name__ == "__main__":

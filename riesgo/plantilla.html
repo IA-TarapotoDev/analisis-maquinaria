@@ -217,8 +217,32 @@
   .bloque.ok { box-shadow: inset 3px 0 0 var(--ok), var(--sombra); }
   .bloque.pend { box-shadow: inset 3px 0 0 var(--aviso), var(--sombra); }
   .bloque.ancho { grid-column: 1 / -1; }
+  .bloques.dos { grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); }
   .paso-c { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
   .paso-c .fl { color: var(--mudo); }
+  .prs { display: inline-flex; gap: 3px; }
+  .pr { display: inline-grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 1; }
+  .pr.si { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .pr.no { background: color-mix(in srgb, var(--mudo) 20%, transparent); color: var(--suave); }
+  .pr.nd { background: color-mix(in srgb, var(--aviso) 26%, transparent); color: var(--texto); }
+  ul.pruebas { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+  ul.pruebas li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; font-size: 13.5px; }
+  ul.pruebas li b { display: block; }
+  ul.pruebas li span.det { color: var(--suave); font-size: 12.5px; }
+  .cola { display: grid; gap: 14px; }
+  .cola .paso { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: start; }
+  .cola .num { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 750; font-size: 17px;
+    background: var(--lima-suave); color: var(--lima-txt); }
+  .cola h3 { margin: 0 0 3px; font-size: 16px; }
+  .cola .cuanto { font-size: 12.5px; color: var(--suave); margin: 0 0 6px; }
+  .mision { font-size: 14.5px; max-width: 980px; margin: 0; }
+  .mision b { font-weight: 650; }
+  textarea.req { width: 100%; min-height: 150px; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; border: 1px solid var(--borde);
+    border-radius: 10px; padding: 10px; background: var(--marco); color: var(--texto); resize: vertical; }
+  .riesgo { display: inline-grid; place-items: center; min-width: 26px; height: 22px; padding: 0 6px; border-radius: 999px; font-weight: 700; font-size: 12.5px;
+    background: var(--wash); color: var(--texto); }
+  .riesgo.a { background: color-mix(in srgb, var(--critico) 16%, transparent); }
+  .riesgo.m { background: color-mix(in srgb, var(--aviso) 26%, transparent); }
   .guias { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 10px; }
   .guia { border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
   .guia.baja { opacity: .78; border-style: dashed; }
@@ -281,7 +305,10 @@
     .lat-int { position: static; flex-direction: row; }
     .lateral .logo { display: none; }
     .nav { flex-direction: row; padding: 0; gap: 2px; }
-    .nav-it { padding: 6px 2px; border-radius: 12px; }
+    .nav-it { padding: 6px 1px; border-radius: 12px; min-width: 0; }
+    .nav-it span { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .cola .paso { grid-template-columns: 34px 1fr; gap: 8px; }
+    .cola .num { width: 30px; height: 30px; font-size: 14px; }
     .nav-it[aria-selected="true"]::before { left: 20%; right: 20%; top: -6px; bottom: auto; width: auto; height: 3px; border-radius: 0 0 3px 3px; }
     .nav-it .cnt { right: 6px; }
     .lateral:not(:has(.nav:not([hidden]))) { display: none; }
@@ -354,6 +381,7 @@ const sinTilde = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").t
 
 /* ---------- formatos ---------- */
 const NF0 = new Intl.NumberFormat("es-PE", { maximumFractionDigits: 0 });
+const NF1 = new Intl.NumberFormat("es-PE", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 const NF2 = new Intl.NumberFormat("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const NF3 = new Intl.NumberFormat("es-PE", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 const NFC = new Intl.NumberFormat("es-PE", { notation: "compact", maximumFractionDigits: 1 });
@@ -435,6 +463,7 @@ const ICONOS = {
   reventa: '<path d="M4 8.5h14.5l-3.5-3.5"/><path d="M20 15.5H5.5L9 19"/>',
   reloj: '<path d="M6.5 3h11M6.5 21h11"/><path d="M7.5 3c0 4.5 4.5 5.5 4.5 9s-4.5 4.5-4.5 9M16.5 3c0 4.5-4.5 5.5-4.5 9s4.5 4.5 4.5 9"/>',
   pausa: '<circle cx="12" cy="12" r="8.5"/><path d="M10 9v6M14 9v6"/>',
+  lupa: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5"/>',
   lupax: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M8.3 8.3l4.4 4.4M12.7 8.3l-4.4 4.4"/>',
   devol: '<path d="M9 14L4.5 9.5 9 5"/><path d="M4.5 9.5H15a5 5 0 0 1 0 10h-3"/>',
   camion: '<path d="M2.5 6.5h11v9h-11z"/><path d="M13.5 9.5h4l3 3.2v2.8h-7z"/><path d="M16 4l3 2.5-3 2.5"/>',
@@ -673,6 +702,8 @@ const MARCAS = {
   gre_cambio: { t: "Guía a la ZTC dada de baja y cambiada por otra a la ZTE", ic: "ruta", c: "var(--serio)" },
   gre_zte: { t: "Guía de remisión con llegada en la ZTE", ic: "ruta", c: "var(--ok)" },
   gre: { t: "Con guía de remisión de la máquina", ic: "ruta", c: "var(--texto)", oculta: 1 },
+  sal: { t: "Una guía la lleva a la ZTC (ver Salidas)", ic: "ruta", c: "var(--critico)" },
+  sinrastro: { t: "Sin tenedor identificado ni guías", ic: "lupax", c: "var(--aviso)" },
 };
 const marcasH = mk => `<span class="mks">${(mk || []).map(k => MARCAS[k] && !MARCAS[k].oculta ? `<span class="mk" title="${esc(MARCAS[k].t)}" role="img" aria-label="${esc(MARCAS[k].t)}" style="color:${MARCAS[k].c}">${ic(MARCAS[k].ic)}</span>` : "").join("")}</span>`;
 const marcasT = mk => (mk || []).map(k => MARCAS[k] ? MARCAS[k].t : k);
@@ -965,6 +996,10 @@ document.addEventListener("click", e => {
   const b = e.target.closest("[data-factura]"); if (b) { e.preventDefault(); verFactura(b.dataset.factura); return; }
   const vg = e.target.closest("[data-guia]"); if (vg) { e.preventDefault(); verGuia(+vg.dataset.guia); return; }
   const g = e.target.closest("[data-guias]"); if (g) { e.preventDefault(); const c = IDX.caso.get(g.dataset.guias); if (c) entregarPedido(pedidoCaso(c), g); return; }
+  const sl = e.target.closest("[data-salida]"); if (sl) { e.preventDefault(); irSalida(sl.dataset.salida); return; }
+  const tn = e.target.closest("[data-tenedor]"); if (tn) { e.preventDefault(); irTenedor(tn.dataset.tenedor); return; }
+  const lr = e.target.closest("[data-lista-ruc]");
+  if (lr) { e.preventDefault(); entregarPedido(pedidoRuc(lr.dataset.listaRuc, lr.dataset.listaNombre || "", lr.dataset.listaDesde, lr.dataset.listaGrupo || "ruc"), lr); return; }
   const a = e.target.closest("[data-caso]"); if (a) { e.preventDefault(); irCaso(a.dataset.caso); }
 });
 
@@ -1075,15 +1110,18 @@ const botonPedido = (icono, texto, clase, fabricar, nota) => el("button", { clas
   onclick: ev => entregarPedido(fabricar(), ev.currentTarget, nota) });
 
 /* ---------- vistas ---------- */
-const VISTAS = [{ id: "resumen", t: "Resumen" }, { id: "alertas", t: "Alertas" }, { id: "maquinas", t: "Máquinas" }, { id: "clientes", t: "Clientes" }];
-let tablaAlertas = null, tablaMaquinas = null, tablaClientes = null;
+const VISTAS = [{ id: "resumen", t: "Resumen" }, { id: "salidas", t: "Salidas", ic: "ruta" }, { id: "buscar", t: "Buscar", ic: "lupa" },
+  { id: "maquinas", t: "Parque" }, { id: "clientes", t: "Tenedores" }, { id: "alertas", t: "Ventas", ic: "ventas" }];
+let tablaAlertas = null, tablaMaquinas = null, tablaClientes = null, tablaSalidas = null, tarjetaGRE = null;
 
 function iniciar() {
   const M = D.meta;
-  IDX = { maq: new Map(D.maquinas.map(m => [m.k, m])), venta: new Map(D.ventas.map(v => [v.cpe, v])), caso: new Map(D.casos.map(c => [c.cpe, c])) };
+  D.salidas = D.salidas || []; D.cola = D.cola || []; D.importadores = D.importadores || []; D.transportistas_maq = D.transportistas_maq || [];
+  IDX = { maq: new Map(D.maquinas.map(m => [m.k, m])), venta: new Map(D.ventas.map(v => [v.cpe, v])), caso: new Map(D.casos.map(c => [c.cpe, c])),
+    sal: new Map(D.salidas.map(x => [x.id, x])) };
   document.title = "Tablero de riesgo · " + M.contribuyente;
-  $("#titulo").textContent = `Perfil de riesgo: ${M.contribuyente}`;
-  $("#sub").textContent = `RUC ${M.ruc} · maquinaria importada con destino a la Amazonía y su venta · datos al ${fecha(M.generado)}`;
+  $("#titulo").textContent = "Maquinaria con beneficio: salidas de la ZTE a la ZTC";
+  $("#sub").textContent = `Base: ${M.contribuyente} (RUC ${M.ruc}), cuaderno de control y ${f0(((D.gre || {}).claves || []).length)} guías de remisión · datos al ${fecha(M.generado)}`;
   $("#acc").append(el("span", { class: "pill", html: ic("calendario") + `${mesLargo(M.desde)} – ${mesLargo(M.hasta)}` }),
     el("button", { class: "pill oscura", type: "button", title: "Cierra el tablero y borra los datos de la memoria del navegador",
       onclick: () => location.replace(location.pathname), html: ic("candado") + "Cerrar tablero" }));
@@ -1091,12 +1129,14 @@ function iniciar() {
   const app = $("#app"); app.hidden = false;
   for (const v of VISTAS) {
     const b = el("button", { class: "nav-it", role: "tab", id: "tab-" + v.id, "aria-controls": v.id, "aria-selected": "false",
-      onclick: () => { location.hash = v.id; }, html: ic(v.id) + `<span>${v.t}</span>` });
-    if (v.id === "alertas") b.append(el("span", { class: "cnt", title: "Casos de nivel alto" }, f0(D.kpi.casos.Alta)));
+      onclick: () => { location.hash = v.id; }, html: ic(v.ic || v.id) + `<span>${v.t}</span>` });
+    const armados = D.salidas.filter(x => x.estado === "Caso armado").length;
+    if (v.id === "salidas" && armados) b.append(el("span", { class: "cnt", title: "Casos armados" }, f0(armados)));
     nav.append(b);
     app.append(el("section", { class: "vista", id: v.id, role: "tabpanel", "aria-labelledby": "tab-" + v.id }));
   }
-  vistaResumen($("#resumen")); vistaAlertas($("#alertas")); vistaMaquinas($("#maquinas")); vistaClientes($("#clientes"));
+  vistaResumen($("#resumen")); vistaSalidas($("#salidas")); vistaAlertas($("#alertas")); vistaMaquinas($("#maquinas")); vistaClientes($("#clientes"));
+  vistaBuscar($("#buscar"));
   window.addEventListener("hashchange", activar); activar();
 }
 function activar() {
@@ -1117,6 +1157,8 @@ function irAlertas(filtro) {
   setTimeout(() => { tablaAlertas.agrupar("", false); tablaAlertas.filtrar(val); }, 0);
 }
 function irMaquinas(filtro) { location.hash = "maquinas"; setTimeout(() => tablaMaquinas.filtrar({ mk: filtro.mk ? MARCAS[filtro.mk].t : "" }), 0); }
+function irSalida(id) { location.hash = "salidas"; setTimeout(() => tablaSalidas && tablaSalidas.abrir(x => x.id === id, id), 0); }
+function irTenedor(ruc) { location.hash = "clientes"; setTimeout(() => tablaClientes.abrir(c => c.ruc === ruc, ruc), 0); }
 function irCaso(cpe) {
   if (IDX.caso.has(cpe)) { location.hash = "alertas"; setTimeout(() => tablaAlertas.abrir(c => c.cpe === cpe, folio(cpe)), 0); return; }
   const v = IDX.venta.get(cpe);
@@ -1137,21 +1179,49 @@ function vistaResumen(sec) {
   const prob = D.casos.filter(c => c.estado.startsWith("Traslado probable")).length;
   const d271 = K.por_dest.find(d => d.cod === "271"), d217 = K.por_dest.find(d => d.cod === "217");
   const art2 = (C.art2 || []).map(a => `${esc(a.periodo)}: ${esc((a.resultado || "").toLowerCase())}`).join(" · ");
+  const S = K.salidas || {}, P = K.parque || {}, Cb = K.cobertura || {}, TI = K.tras_ia || {};
+  const nS = e => S[e] || 0, porCompletar = nS("Por completar") + nS("Indicio: guía dada de baja");
+  const riesgoAlto = Object.values(D.clientes).filter(c => (c.riesgo || 0) >= 4).length;
+  const tm = tarjeta("Qué busca este tablero");
+  tm.append(el("p", { class: "mision", html: `Máquinas importadas con el beneficio de la Amazonía que salieron de la ZTE a la ZTC <b>sin solicitud de traslado</b>, ` +
+    `con ${f0(K.plazo || 4)} años o menos desde su importación. Un caso está <b>armado</b> cuando reúne cinco pruebas: la serie de la máquina, su DAM con beneficio, ` +
+    `${f0(K.plazo || 4)} años o menos al salir, que no tenga solicitud de traslado y una guía vigente que la lleve a la ZTC. Después falta lo principal: ubicar la máquina. ` +
+    (TI.total ? `En el cuaderno hay ${f0(TI.total)} traslados de maquinaria amarilla (${esc(TI.anios)}) y todos los pidieron importadores: ` +
+      `ningún comprador pidió uno, así que la salida que hace el comprador solo se ve en sus guías.` : "") }));
+  sec.append(tm);
+  const f0b = el("div", { class: "g12" }); sec.append(f0b);
+  f0b.append(
+    plan({ clase: "oscuro", icono: "ruta", titulo: "Salidas detectadas", chip: `${f0(D.salidas.length)} máquinas`, valor: `${f0(nS("Caso armado"))} · ${f0(porCompletar)} · ${f0(nS("Descartada"))}`,
+      sub: "casos armados · por completar · descartadas", punto: "var(--lat-act)",
+      puntos: [nS("Caso armado") ? `<b>${f0(nS("Caso armado"))}</b> con las cinco pruebas: falta ubicar y verificar la máquina` : "Aún no hay casos armados",
+        nS("Indicio: guía dada de baja") ? `<b>${f0(nS("Indicio: guía dada de baja"))}</b> con la guía a la ZTC dada de baja` : "",
+        nS("Regresó a la ZTE") ? `<b>${f0(nS("Regresó a la ZTE"))}</b> que regresaron a la ZTE` : "",
+        nS("Descartada") ? `Descartadas: con solicitud de traslado o sin beneficio` : ""], boton: "Ver salidas", destino: "salidas" }),
+    plan({ icono: "lupa", titulo: "Dónde buscar ahora", chip: "Siguiente paso", valor: f0(D.cola.length), sub: "búsquedas en cola, de más a menos rendidora",
+      punto: "var(--lima)", puntos: D.cola.slice(0, 4).map((c, i) => `${i + 1}. ${esc(c.t)}: <b>${f0(c.n)}</b> ${esc(c.u)}`), boton: "Abrir la cola", destino: "buscar", pill: "lima" }),
+    plan({ icono: "maquinas", titulo: "Parque con beneficio", chip: `${f0(K.maq_dams)} DAM`, valor: f0(P.total || K.maq_series), sub: "máquinas del importador que se siguen",
+      punto: "var(--s3)", puntos: [`Con tenedor identificado por serie: <b>${f0(P.con_ten || 0)}</b>`, `Con alguna guía descargada: <b>${f0(P.con_rastro || 0)}</b>`,
+        `Sin tenedor ni guía: <b>${f0(P.sin_rastro || 0)}</b>`, K.fuera_series ? `${f0(K.fuera_series)} sin beneficio no se siguen` : ""], boton: "Ver parque", destino: "maquinas" }),
+    plan({ clase: "violeta", icono: "clientes", titulo: "Tenedores", chip: `${f0(Object.keys(D.clientes).length)} compradores`, valor: f0(riesgoAlto), sub: "con riesgo alto de mover la máquina a la ZTC",
+      punto: "var(--violeta)", puntos: [`Guías consultadas desde la compra: <b>${f0(Cb.consultados || 0)}</b> de ${f0(Cb.tenedores || 0)}` + (Cb.parcial ? ` (${f0(Cb.parcial)} en parte)` : ""),
+        `Riesgo: frontera con la ZTC, alquiler, constructoras, domicilio fuera`, `${f0(D.importadores.filter(x => !x.es).length)} importadores más con maquinaria y beneficio en el cuaderno`],
+      boton: "Ver tenedores", destino: "clientes", pill: "violeta" }));
+  sec.append(el("h2", { style: "margin-top:6px" }, "El importador en cifras"));
   const f1 = el("div", { class: "g12" }); sec.append(f1);
   f1.append(
-    plan({ clase: "oscuro", icono: "alertas", titulo: "Casos", chip: "Prioridad", valor: `${f0(K.casos.Alta)} · ${f0(K.casos.Media)} · ${f0(K.casos.Baja)}`, sub: "nivel alto · medio · bajo",
-      punto: "var(--lat-act)", puntos: [conf ? `<b>${f0(conf)}</b> confirmados por número de serie sin traslado de salida` : "",
+    plan({ clase: "", icono: "alertas", titulo: "Ventas con indicios", chip: "Por venta", valor: `${f0(K.casos.Alta)} · ${f0(K.casos.Media)} · ${f0(K.casos.Baja)}`, sub: "nivel alto · medio · bajo",
+      punto: "var(--critico)", puntos: [conf ? `<b>${f0(conf)}</b> confirmados por número de serie sin traslado de salida` : "",
         K.alta_sin_xml ? `<b>${f0(K.alta_sin_xml)}</b> de nivel alto esperan su XML` : "Todos los de nivel alto tienen su XML",
-        prob ? `<b>${f0(prob)}</b> con traslado probable por confirmar` : ""], boton: "Ver alertas", destino: "alertas" }),
-    plan({ icono: "maquinas", titulo: "Máquinas con beneficio", chip: `${f0(K.maq_dams)} DAM`, valor: f0(K.maq_series), sub: "series de maquinaria que se siguen",
+        prob ? `<b>${f0(prob)}</b> con traslado probable por confirmar` : ""], boton: "Ver ventas", destino: "alertas" }),
+    plan({ icono: "importaciones", titulo: "DAM con beneficio", chip: "Por destino", valor: f0(K.maq_dams), sub: "DAM del importador con maquinaria que se sigue",
       punto: "var(--lima)", puntos: [d271 ? `Destino Tarapoto: <b>${f0(d271.series)}</b> (${f0(d271.ctl)} DAM en el cuaderno de control)` : "",
         d217 ? `Destino Pucallpa: <b>${f0(d217.series)}</b> (las controla la IA Pucallpa)` : "",
         K.fuera_series ? `<b>${f0(K.fuera_series)}</b> series sin beneficio no se siguen (${f0(K.fuera_dams)} DAM)` : ""],
-      boton: "Ver máquinas", destino: "maquinas", pill: "lima" }),
+      boton: "Ver parque", destino: "maquinas", pill: "lima" }),
     plan({ icono: "ventas", titulo: "Ventas de maquinaria", chip: `${f0(Object.keys(D.clientes).length)} compradores`, valor: f0(K.vend), sub: "facturas vigentes, sin anuladas ni anticipos",
       punto: "var(--s3)", puntos: [`Fuera de la ZTE: <b>${f0(K.vend_z.ZTC)}</b>`, `Con IGV: <b>${f0(K.vend_igv)}</b>`,
         K.vend_z["Sin dato"] ? `Sin zona (personas naturales y sin padrón): <b>${f0(K.vend_z["Sin dato"])}</b>` : ""],
-      boton: "Ver compradores", destino: "clientes" }),
+      boton: "Ver tenedores", destino: "clientes" }),
     plan({ clase: "violeta", icono: "escudo", titulo: "Control de la IA", chip: "Tarapoto", valor: f0(K.ben_dams || 0), sub: "DAM con solicitud de regularización (con beneficio)",
       punto: "var(--violeta)", puntos: [`<b>${f0(K.tras_salida)}</b> solicitudes de traslado de maquinaria a la ZTC (${f0(K.tras_maq)} máquinas)`,
         K.sinreg_dams ? `<b>${f0(K.sinreg_dams)}</b> DAM de Tarapoto no están en el cuaderno: completar el dato` : "",
@@ -1164,6 +1234,7 @@ function vistaResumen(sec) {
   sec.append(tz);
 
   const tp = tarjeta("Patrones", "Lo que muestran los datos en conjunto. Cada patrón lleva a los casos que lo forman.");
+  tp.id = "patrones";
   const ul = el("ul", { class: "hallazgos" });
   for (const p of D.patrones) {
     const li = el("li", {}, el("div", { html: NIVEL(p.nivel) }), el("div", { class: "txt", html: `<b class="t">${esc(p.t)}</b>` +
@@ -1172,7 +1243,7 @@ function vistaResumen(sec) {
       const a = el("a", { href: p.filtro ? "#alertas" : "#maquinas" }, p.filtro ? "Ver casos →" : "Ver máquinas →");
       a.addEventListener("click", e => { e.preventDefault(); p.filtro ? irAlertas(p.filtro) : irMaquinas(p.maq); });
       li.lastChild.append(" ", a);
-    }
+    } else if (p.ir) li.lastChild.append(" ", el("a", { href: "#" + p.ir }, p.ir === "salidas" ? "Ver salidas →" : "Abrir →"));
     ul.append(li);
   }
   tp.append(ul); sec.append(tp);
@@ -1196,6 +1267,183 @@ function vistaResumen(sec) {
   tc.append(g); sec.append(tc);
 }
 
+
+/* ---------- salidas detectadas: un expediente por máquina que una guía lleva de la ZTE a la ZTC ---------- */
+const EST_SAL = { "Caso armado": "alerta", "Indicio: guía dada de baja": "pend", "Por completar": "pend", "Regresó a la ZTE": "", "Descartada": "ok" };
+const ORD_SAL = ["Caso armado", "Indicio: guía dada de baja", "Por completar", "Regresó a la ZTE", "Descartada"];
+const estSalH = x => `<span class="etq ${EST_SAL[x.estado] || ""}">${esc(x.estado)}</span>`;
+const PRUEBAS = [["serie", "Serie de la máquina"], ["dam", "DAM con beneficio"], ["plazo", "4 años o menos al salir"], ["tras", "Sin solicitud de traslado"], ["salida", "Guía vigente a la ZTC"]];
+const pruebaIc = v => v === true ? `<span class="pr si">✓</span>` : v === false ? `<span class="pr no">✕</span>` : `<span class="pr nd">?</span>`;
+const pruebasH = x => `<span class="prs">${PRUEBAS.map(([k, t]) => `<span title="${esc(t)}: ${x.pruebas[k] === true ? "sí" : x.pruebas[k] === false ? "no" : "falta"}">${pruebaIc(x.pruebas[k])}</span>`).join("")}</span>`;
+const quienH = q => q && (q.nombre || q.ruc) ? `${esc(q.nombre || q.ruc)}${q.nombre && q.ruc ? ` <span class="etq">${esc(q.ruc)}</span>` : ""}` : "s/d";
+const conTipos = bs => bs.map(b => b.directa ? b : { tipos: TIPOS_GRE, ...b });
+const EDADES = ["2 años o menos", "Más de 2 y hasta 4 años", "Más de 4 años", "Sin fecha de DAM"];
+const edadT = x => x.edad == null ? EDADES[3] : x.edad <= 2 ? EDADES[0] : x.edad <= 4 ? EDADES[1] : EDADES[2];
+
+function pedidoRuc(ruc, nombre, desde, grupo) {
+  return pedidoGRE(`${grupo}-${ruc}`, `Guías de ${nombre || ruc} como remitente`, [{ etiqueta: `${nombre || ruc} (${ruc}): guías como remitente desde el ${fecha(desde)}`,
+    grupo, rucEmisor: ruc, tipos: TIPOS_GRE, desde, hasta: "hoy" }]);
+}
+function pedidoSalida(x) {
+  const vistos = new Set(), busq = [];
+  for (const q of x.seguir || []) {
+    if (!rucGRE(q.ruc) || vistos.has(q.ruc)) continue;
+    vistos.add(q.ruc);
+    busq.push({ etiqueta: `${x.id}: guías de ${q.nombre || q.ruc} (${q.rol}) desde la salida`, caso: x.id, grupo: "salida", rucEmisor: q.ruc, tipos: TIPOS_GRE, desde: isoMas(x.f, -3), hasta: "hoy" });
+  }
+  return pedidoGRE("salida-" + x.id, "Seguir la máquina " + x.id, busq);
+}
+function textoRequerimiento(x) {
+  const g = D.guias[x.gs[0]] || {}, m = x.maq, d = x.dam || {};
+  return [
+    `Asunto: ubicación de maquinaria y sustento de su traslado fuera de la zona de tributación especial`,
+    ``,
+    `Destinatario: ${x.ten.nombre || ""}${x.ten.ruc ? " (RUC " + x.ten.ruc + ")" : ""}`,
+    `Máquina: ${m.cat}${m.serie ? ", serie " + m.serie : ""}. Descripción en la guía: ${m.desc}`,
+    d.dam ? `Importación: DAM ${d.dam}${d.serie ? " serie " + d.serie : ""}${d.f ? " (" + (d.f.length > 4 ? fecha(d.f) : d.f) + ")" : ""}${d.benef ? ", con el beneficio de la Amazonía" : ""}.` : (d.f ? `Importación: DAM de ${d.f}${d.benef ? ", con el beneficio de la Amazonía" : ""} (número por anotar).` : `Importación: DAM por identificar.`),
+    `Hecho: la guía de remisión ${g.num || ""} del ${fecha(x.f)}, emitida por ${(g.em || {}).nombre || ""}${(g.em || {}).ruc ? " (RUC " + g.em.ruc + ")" : ""}, ` +
+      `traslada la máquina de ${x.p} a ${x.l}${g.l && g.l.dir ? " (" + g.l.dir + ")" : ""}.` + (x.tras === false ? ` No registra solicitud de traslado.` : ""),
+    ``,
+    `Se requiere:`,
+    `1. Indicar la ubicación actual de la máquina (dirección y referencia) y ponerla a disposición para su verificación física.`,
+    `2. Presentar el sustento de la salida de la zona: solicitud de traslado y pago de los tributos, si los hubiera.`,
+    `3. Presentar el contrato, la orden de servicio o el documento de la obra que motivó el traslado.`,
+    `4. Presentar las guías de remisión posteriores de la máquina, incluida la de retorno, si regresó.`,
+  ].join("\n");
+}
+function fichaSalida(x) {
+  const f = el("div", { class: "ficha" }), d = x.dam || {}, u = x.ubic || {};
+  const acc = el("div", { class: "ficha-acc" });
+  const pd = pedidoSalida(x);
+  if (pd.busquedas.length && !["Descartada"].includes(x.estado)) acc.append(botonPedido("camion", "Seguir la máquina", "btn principal", () => pedidoSalida(x)));
+  if (x.cpe) acc.append(el("a", { class: "btn claro", href: "#alertas", "data-caso": x.cpe, html: ic("ventas") + "Ver la venta " + esc(folio(x.cpe)) }));
+  if (x.maq.k) acc.append(el("a", { class: "btn claro", href: "#maquinas", onclick: e => { e.preventDefault(); location.hash = "maquinas"; setTimeout(() => tablaMaquinas.abrir(m => m.k === x.maq.k, x.maq.serie), 0); }, html: ic("maquinas") + "Ver en el parque" }));
+  if (acc.childNodes.length) f.append(acc);
+  const b = el("div", { class: "bloques dos" }); f.append(b);
+  const det = {
+    serie: x.maq.serie ? `Serie ${copiable(x.maq.serie)}` : "La guía no indica la serie",
+    dam: d.dam || d.f ? `${d.dam ? "DAM " + copiable(d.dam) + (d.serie ? " serie " + esc(d.serie) : "") : "DAM de " + esc(d.f) + " (falta el número)"}${d.f && d.dam ? " · " + (d.f.length > 4 ? fecha(d.f) : esc(d.f)) : ""}` +
+      `${d.imp ? " · " + esc(d.imp) : ""}${d.benef === true ? " · con beneficio" : d.benef === false ? " · sin beneficio" : ""}${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}` : "Aún no se conoce la DAM de esta máquina",
+    plazo: x.edad == null ? "Falta la fecha de la DAM" : d.f && d.f.length === 4 ? `Importada en ${esc(d.f)}; salió en ${esc(x.f.slice(0, 4))}`
+      : `Salió ${NF1.format(x.edad)} ${x.edad === 1 ? "año" : "años"} después de la importación`,
+    tras: esc(x.tras_nota || (x.tras == null ? "Sin confirmar" : "")),
+    salida: x.evid === "vigente" ? `Guía vigente de ${esc(x.p)} a ${esc(x.l)} el ${fecha(x.f)}` : "La guía a la ZTC se dio de baja: falta confirmar a dónde llegó la máquina",
+  };
+  b.append(bloque("Pruebas del caso", "check", [], { clase: x.estado === "Caso armado" ? "alerta" : x.estado === "Descartada" ? "ok" : "pend",
+    html: `<p>${estSalH(x)} ${esc(x.motivo)}</p><ul class="pruebas">${PRUEBAS.map(([k, t]) => `<li>${pruebaIc(x.pruebas[k])}<span><b>${esc(t)}</b><span class="det">${det[k]}</span></span></li>`).join("")}</ul>` }));
+  b.append(bloque("Dónde está", "pin", [
+    ["Última ubicación", `${esc(u.lugar || "s/d")} ${zonaH(u.zona)}${u.dir ? "<br>" + esc(u.dir) : ""}`],
+    ["Según", `Guía ${esc(u.guia || "")} del ${fecha(u.f)} <span class="etq ${u.dias > 60 ? "pend" : "ok"}">hace ${f0(u.dias)} días</span>`],
+    ["La recibió", quienH(u.rec)], ["Verificada por el equipo", esc(u.verif || "")],
+    ["Regreso", x.regreso ? `Volvió a la ZTE el ${fecha(x.regreso.f)} con la guía ${esc(x.regreso.guia)} (${esc(x.regreso.lugar)})` : ""],
+  ], { clase: x.regreso ? "ok" : "" }));
+  b.append(bloque("Quién la movió", "persona", [
+    ["Remitente", quienH(x.mov)], ["Destinatario", quienH(x.rec)],
+    ["A quién requerir", quienH(x.ten) + (x.cliente ? ` · <a href="#clientes" data-tenedor="${esc(x.cliente)}">ver tenedor</a>` : "")],
+    ["Motivo de la guía", esc(x.motivo_g || "")],
+    ["Transportista", (x.transp || []).map(quienH).join("<br>")], ["Placas", (x.placas || []).map(copiable).join(" ")],
+    ["Venta del importador", x.venta ? esc(folio(x.venta)) + (x.exportada ? ` · DAM de exportación ${esc(x.exportada)}` : "") : ""],
+  ]));
+  b.append(bloque("Máquina", "maquinas", [["Tipo", esc(x.maq.cat)], ["Serie", x.maq.serie ? copiable(x.maq.serie) : "No figura en la guía"], ["En la guía", esc(x.maq.desc)],
+    ["Observación del equipo", esc(x.obs || "")]]));
+  if ((x.pasos || []).length) b.append(bloque("Qué hacer ahora", "check", [], { clase: "ancho", html: `<ol>${x.pasos.map(t => `<li>${esc(t)}</li>`).join("")}</ol>` }));
+  if (!["Descartada", "Regresó a la ZTE"].includes(x.estado)) {
+    const ta = el("textarea", { class: "req", readonly: "", "aria-label": "Borrador del requerimiento" }); ta.value = textoRequerimiento(x);
+    const br = bloque("Borrador del requerimiento", "doc", [], { clase: "ancho", html: `<p>Texto base para el requerimiento al tenedor. Ajústelo a su formato antes de usarlo.</p>` });
+    br.append(ta, el("div", { class: "ficha-acc" }, el("button", { class: "btn claro", type: "button", html: ic("doc") + "Copiar texto",
+      onclick: async ev => { const bt = ev.currentTarget; try { await navigator.clipboard.writeText(ta.value); bt.textContent = "Copiado"; } catch (e) { ta.select(); } } })));
+    b.append(br);
+  }
+  b.append(bloque(`Guías de remisión (${x.gs.length})`, "ruta", [], { clase: "ancho", html: `<div class="guias">${x.gs.filter(i => D.guias[i]).map(i => guiaH(D.guias[i], "", null, i)).join("")}</div>` }));
+  return f;
+}
+function vistaSalidas(sec) {
+  const S = D.kpi.salidas || {}, n = e => S[e] || 0;
+  sec.append(el("h2", {}, "Salidas detectadas"),
+    el("p", { class: "nota" }, "Cada fila es una máquina que una guía de remisión lleva de la ZTE a la ZTC, sea del importador, del comprador o de un tercero. " +
+      "El expediente junta las pruebas: serie, DAM con beneficio, 4 años o menos, sin solicitud de traslado y guía vigente. Lo que el tablero no puede saber se completa en el Excel de consultas, hoja «Salidas por verificar»."));
+  const ks = el("div", { class: "kpis" });
+  ks.append(kpi(`<span class="etq alerta">Caso armado</span>`, f0(n("Caso armado")), "falta ubicar y verificar"),
+    kpi(`<span class="etq pend">Por completar</span>`, f0(n("Por completar") + n("Indicio: guía dada de baja")), n("Indicio: guía dada de baja") ? `${f0(n("Indicio: guía dada de baja"))} con guía dada de baja` : "falta una o más pruebas"),
+    kpi(`<span class="etq">Regresó a la ZTE</span>`, f0(n("Regresó a la ZTE")), "salió y volvió"),
+    kpi(`<span class="etq ok">Descartada</span>`, f0(n("Descartada")), "con traslado o sin beneficio"));
+  sec.append(ks);
+  const t = tarjeta(); sec.append(t);
+  if (!D.salidas.length) { t.append(el("p", { class: "nota" }, "Todavía no hay guías que lleven una máquina de la ZTE a la ZTC. Descargue guías con las listas de «Dónde buscar».")); return; }
+  t.append(el("p", { class: "nota", html: `Pruebas, en orden: ${PRUEBAS.map(([, tx]) => esc(tx.toLowerCase())).join(", ")}. ${pruebaIc(true)} cumple · ${pruebaIc(null)} falta averiguarlo · ${pruebaIc(false)} no cumple (descarta el caso).` }));
+  const GRUPOS_SAL = [
+    { id: "estado", t: "Estado", clave: r => r.estado, orden: (a, b) => ORD_SAL.indexOf(a.k) - ORD_SAL.indexOf(b.k), cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span></span>` },
+    { id: "quien", t: "Quién la movió", clave: r => r.mov.nombre || r.mov.ruc, cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span></span>` },
+    { id: "destino", t: "Destino", clave: r => (r.l || "").split(", ").slice(-1)[0], cabecera: (k, rs) => `<b class="g">${esc(k)}</b><span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span></span>` },
+  ];
+  tablaSalidas = tabla(t, { id: "salidas", grupos: GRUPOS_SAL, ph: "Buscar serie, empresa, RUC, guía, lugar…", porPag: 25, archivo: "salidas.csv", filas: D.salidas, detalle: fichaSalida,
+    extraBusqueda: r => [r.id, r.mov.ruc, r.rec.ruc, r.rec.nombre, r.ten.nombre, r.dam.dam, r.venta, (r.gs || []).map(i => (D.guias[i] || {}).num || "").join(" "), (r.placas || []).join(" ")].join(" "),
+    cols: [{ t: "Estado", v: r => ORD_SAL.indexOf(r.estado), h: estSalH, csv: r => r.estado }, { k: "id", t: "Exp.", c: 1 }, { k: "f", t: "Salida", f: fecha, c: 1 },
+      { t: "Máquina", v: r => `${r.maq.cat} ${r.maq.serie}`, h: r => `${esc(r.maq.cat)}${r.maq.serie ? "<br>" + copiable(r.maq.serie) : `<br><span class="etq pend">sin serie</span>`}`, csv: r => `${r.maq.cat} ${r.maq.serie}`.trim() },
+      { t: "Quién la movió", v: r => r.mov.nombre || r.mov.ruc, largo: 1 },
+      { t: "De → a", v: r => `${r.p} → ${r.l}`, largo: 1, h: r => `${esc(r.p)} <span class="fl">→</span> <b>${esc(r.l)}</b>` },
+      { t: "Pruebas", v: r => PRUEBAS.filter(([k]) => r.pruebas[k] === true).length, h: pruebasH, csv: r => PRUEBAS.map(([k, tx]) => `${tx}: ${r.pruebas[k] === true ? "sí" : r.pruebas[k] === false ? "no" : "falta"}`).join("; ") },
+      { k: "motivo", t: "Qué falta o por qué se descarta", largo: 1 },
+      { t: "Última ubicación", v: r => r.ubic.f, largo: 1, h: r => `${esc(r.ubic.lugar)}<br><span class="etq ${r.ubic.dias > 60 ? "pend" : "ok"}">hace ${f0(r.ubic.dias)} días</span>`, csv: r => `${r.ubic.lugar} ${r.ubic.dir} (${r.ubic.f})` }],
+    filtros: [{ t: "Estado", campo: "estado", valor: r => r.estado, opciones: ORD_SAL.filter(e => D.salidas.some(x => x.estado === e)) },
+      { t: "Quién la movió", campo: "quien", valor: r => r.mov.ruc === D.meta.ruc ? "El importador" : "El comprador o un tercero" },
+      { t: "Tipo", campo: "cat", valor: r => r.maq.cat },
+      { t: "Antigüedad al salir", campo: "edad", valor: edadT, opciones: EDADES.filter(o => D.salidas.some(x => edadT(x) === o)) }] });
+}
+
+/* ---------- dónde buscar: la cola de búsquedas y lo que falta consultar ---------- */
+function vistaBuscar(sec) {
+  sec.append(el("h2", {}, "Dónde buscar"),
+    el("p", { class: "nota" }, "La cola ordena las búsquedas de la que más rinde a la que menos. Cada botón copia una lista: en la pantalla de guías de SUNAT, péguela en el panel del extractor y pulse «Buscar y descargar». " +
+      "Luego envíe el JSON que descarga el extractor para integrarlo: las máquinas que crucen a la ZTC aparecerán en «Salidas»."));
+  const tc = tarjeta("Cola de búsqueda"); const lista = el("div", { class: "cola" }); tc.append(lista); sec.append(tc);
+  D.cola.forEach((c, i) => {
+    const cuerpo = el("div", {}, el("h3", {}, c.t), el("p", { class: "cuanto" }, `${f0(c.n)} ${c.u}`), el("p", { class: "nota" }, c.por));
+    const nota = el("p", { class: "nota", role: "status" });
+    if (c.busquedas) cuerpo.append(el("div", { class: "ficha-acc" }, botonPedido("camion", "Copiar la lista para el extractor", i === 0 ? "btn principal" : "btn claro", () => pedidoGRE("cola-" + c.id, c.t, conTipos(c.busquedas)), nota)), nota);
+    if (c.excel && (D.adjuntos || {})[XLSX_CONSULTAS]) cuerpo.append(el("div", { class: "ficha-acc" }, el("button", { class: "btn claro", type: "button", onclick: () => descargarAdjunto(XLSX_CONSULTAS), html: ic("descarga") + "Descargar Excel de consultas" })));
+    lista.append(el("div", { class: "paso" }, el("div", { class: "num" }, String(i + 1)), cuerpo));
+  });
+  if (!D.cola.length) lista.append(el("p", { class: "nota" }, "No hay búsquedas pendientes."));
+
+  if (D.transportistas_maq.length) {
+    const tt = tarjeta("Transportistas que ya llevaron máquinas", "Guías de transportista con maquinaria en las descargas. «Guías consultadas» es la parte de los últimos dos años con sus guías descargadas como emisor. «Lista» copia la búsqueda de esos dos años.");
+    tabla(tt, { porPag: 10, archivo: "transportistas_maquinaria.csv", filas: D.transportistas_maq, orden: { i: 2, d: -1 },
+      cols: [{ k: "nombre", t: "Transportista", largo: 1 }, { k: "ruc", t: "RUC", c: 1 }, { k: "guias", t: "Guías con máquinas", n: 1 },
+        { t: "Guías consultadas", v: r => r.cob, h: r => `<span class="etq ${r.cob >= 0.8 ? "ok" : r.cob > 0 ? "pend" : ""}">${Math.round(r.cob * 100)} %</span>` },
+        { t: "Lista", v: () => "", h: r => rucGRE(r.ruc) ? `<button class="btn claro mini" type="button" data-lista-ruc="${esc(r.ruc)}" data-lista-nombre="${esc(r.nombre)}" data-lista-desde="${isoMas(hoyLocal(), -730)}" data-lista-grupo="transportista" title="Copia la lista de sus guías como emisor de los últimos 2 años">${ic("camion")}Lista</button>` : "–" }] });
+    sec.append(tt);
+  }
+  const otros = D.importadores.filter(x => !x.es);
+  if (otros.length) {
+    const ti = tarjeta("Otros importadores con maquinaria y beneficio", `Del cuaderno de control: DAM de maquinaria amarilla y agrícola de los últimos ${f0(D.kpi.plazo || 4)} años. El cuaderno no trae las series, ` +
+      "así que sus máquinas se identifican por las guías. Si el importador no escribe la serie en la guía, la llegada en la ZTC igual es un indicio: aparecerá en «Salidas» como máquina sin serie. «Lista» copia la búsqueda de sus guías como remitente del último año.");
+    ti.id = "importadores";
+    tabla(ti, { porPag: 12, archivo: "importadores_maquinaria.csv", filas: otros, ph: "Buscar importador o RUC…", buscar: true, orden: { i: 2, d: -1 },
+      cols: [{ k: "nombre", t: "Importador", largo: 1 }, { k: "ruc", t: "RUC", c: 1 }, { k: "amarilla", t: "DAM amarilla", n: 1 }, { k: "agricola", t: "DAM agrícola", n: 1 },
+        { t: "Guías consultadas", v: r => r.cob == null ? -1 : r.cob, h: r => r.cob == null ? "–" : `<span class="etq ${r.cob >= 0.8 ? "ok" : r.cob > 0 ? "pend" : ""}">${Math.round(r.cob * 100)} %</span>` },
+        { t: "Lista", v: () => "", h: r => rucGRE(r.ruc) ? `<button class="btn claro mini" type="button" data-lista-ruc="${esc(r.ruc)}" data-lista-nombre="${esc(r.nombre)}" data-lista-desde="${isoMas(hoyLocal(), -365)}" data-lista-grupo="importador" title="Copia la lista de sus guías como remitente del último año">${ic("camion")}Lista</button>` : "–" },
+        { t: "Tipos", v: r => (r.tipos || []).join(", "), largo: 1 }, { t: "Ciudad", v: r => (r.ciudades || []).join(", "), largo: 1 },
+        { k: "sin_benef", t: "Sin beneficio", n: 1 }, { k: "tras", t: "Traslados pedidos", n: 1 }] });
+    sec.append(ti);
+  }
+  if (tarjetaGRE) { tarjetaGRE.querySelector("h3").textContent = "Listas de rutina"; sec.append(tarjetaGRE); }
+  const tf = tarjeta("Si no hay guía: dónde queda el rastro", "Una máquina puede salir sin guía. Estas fuentes están fuera de las guías de SUNAT y se piden con un requerimiento a terceros, cuando el caso lo justifica.");
+  tf.append(el("ul", { class: "nota" },
+    el("li", {}, "Permisos de carga especial: las camas bajas con máquinas grandes necesitan autorización para circular; el permiso indica la ruta, las placas y la carga."),
+    el("li", {}, "Peajes de las salidas de la zona (ruta a Olmos por Corral Quemado y Carretera Central): registran las placas. Las placas de las camas bajas ya vistas están en cada expediente."),
+    el("li", {}, "Concesionario de la marca en la ZTC: historial de servicio o ubicación por GPS de una serie."),
+    el("li", {}, "Obras del tenedor fuera de la zona: contratos con entidades públicas y su relación de equipos."),
+    el("li", {}, "El propio tenedor: que exhiba la máquina o informe dónde está (borrador en cada expediente de «Salidas»).")));
+  sec.append(tf);
+  const g = D.gre || {};
+  if ((g.archivos || []).length) {
+    const tg = tarjeta("Lo ya descargado", `${f0((g.claves || []).length)} guías con detalle en ${f0(g.archivos.length)} descargas. Las listas nuevas las marcan como conocidas para no bajarlas otra vez.`);
+    tg.append(el("ul", { class: "nota" }, ...g.archivos.map(a => el("li", {}, `${a.titulo}: ${f0(a.guias)} guías (${fecha(a.generado)})`))));
+    sec.append(tg);
+  }
+}
+
 /* Excel de consultas a otras intendencias: viaja cifrado dentro de los datos */
 const XLSX_CONSULTAS = "consultas_otras_intendencias.xlsx";
 function descargarAdjunto(nombre) {
@@ -1210,7 +1458,9 @@ function tarjetaConsultas() {
   const ventasAlta = new Set(D.casos.filter(c => c.nivel !== "Baja").flatMap(c => c.maqs.map(k => k.split("#")[0])));
   const p1 = Object.entries(D.dams).filter(([k, x]) => x.dest && x.dest !== "271" && (x.conv || "").includes("C-") && ventasAlta.has(k)).length;
   const series = D.casos.filter(c => (c.series || []).length && !c.maqs.length && !(c.tras_prob || []).length).length;
-  const t = tarjeta("Consultas a otras intendencias", `El cuaderno de la IA Tarapoto solo cubre las DAM con destino Tarapoto. Este Excel lista lo que conviene consultar en el sistema: ` +
+  const porVer = D.salidas.filter(x => x.estado === "Por completar" || x.estado.startsWith("Indicio")).length;
+  const t = tarjeta("Excel de consultas", (porVer ? `Primera hoja, «Salidas por verificar»: ${f0(porVer)} máquinas que una guía lleva a la ZTC y a las que les falta la DAM, el beneficio o el traslado. ` : "") +
+    `El cuaderno de la IA Tarapoto solo cubre las DAM con destino Tarapoto. El Excel también lista lo que conviene consultar en el sistema: ` +
     `${f0(otras.length)} DAM con maquinaria y destino en otra intendencia (${f0(p1)} de prioridad 1, ya vendidas con indicios de salida), ${f0(series)} series que no están en las DAM del periodo ` +
     `y las DAM de 2024 con traslados de maquinaria. Complete las celdas amarillas y devuélvalo por el chat: el tablero lo incorpora y conserva lo ya completado en la siguiente versión.`);
   t.id = "consultas";
@@ -1348,7 +1598,7 @@ function fichaCaso(c) {
 
 function vistaAlertas(sec) {
   const K = D.kpi;
-  sec.append(el("h2", {}, "Alertas"),
+  sec.append(el("h2", {}, "Ventas con indicios"),
     el("p", { class: "nota" }, "Cada caso es una venta de maquinaria con indicios de salida de la zona del beneficio. Solo se siguen las máquinas con beneficio (DAM con solicitud de regularización); las importadas sin beneficio, improcedentes o sin solicitud de reconocimiento no forman casos. Alto: comprador fuera de la ZTE, venta con IGV o reemisión sin IGV, sin solicitud de traslado para la serie, o DAM de Tarapoto que falta en el cuaderno. Medio: traslado probable por confirmar, o comprador reciente o no habido. Bajo: coherente (exportada o con solicitud de traslado para la serie). Abra un caso para ver la máquina, su DAM, el control de la IA y la cadena de comprobantes."));
   const ks = el("div", { class: "kpis" });
   const sub = { Alta: K.alta_sin_xml ? `${f0(K.alta_sin_xml)} esperan su XML` : `${f0(D.casos.filter(c => c.estado.startsWith("Confirmada")).length)} confirmados por número de serie`, Media: `${f0(D.casos.filter(c => c.estado.startsWith("Traslado probable")).length)} con traslado probable`, Baja: "coherentes o regularizados" };
@@ -1367,10 +1617,9 @@ function vistaAlertas(sec) {
     el("ul", { class: "nota" },
       el("li", {}, `Lista del día (ayer y hoy): ${f0(nReinc)} ${nReinc === 1 ? "comprador reincidente" : "compradores reincidentes"} (con casos altos o medios) como remitentes y destinatarios, el importador (RUC ${D.meta.ruc}) y ` +
         (transp.length ? `${f0(transp.length)} ${transp.length === 1 ? "transportista" : "transportistas"}: ${transp.map(x => x.nombre ? `${x.nombre} (${x.ruc})` : x.ruc).join(", ")}.` : "ningún transportista (la lista se agrega al generar el tablero).")),
-      el("li", {}, `Casos: «Buscar guías» en cada caso, o todos los altos a la vez. Busca las guías del comprador desde ${VENTANA_CASO.antes} días antes hasta ${VENTANA_CASO.despues} días después de la venta, y las guías citadas en la factura.`),
-      ...(((D.gre || {}).claves || []).length ? [el("li", {}, `Integradas al tablero: ${f0(D.gre.claves.length)} guías (${(D.gre.archivos || []).map(x => `${x.titulo}, ${fecha(x.generado)}`).join("; ")}); ${f0((D.guias || []).length)} se enlazan con una venta o una máquina y se ven en su ficha. Las listas nuevas las marcan como conocidas para no descargarlas otra vez.`)] : [])),
+      el("li", {}, `Casos: «Buscar guías» en cada caso, o todos los altos a la vez. Busca las guías del comprador desde ${VENTANA_CASO.antes} días antes hasta ${VENTANA_CASO.despues} días después de la venta, y las guías citadas en la factura.`)),
     notaG);
-  sec.append(tg);
+  tarjetaGRE = tg;
 
   if (D.pendientes.length) {
     const d = el("details", { class: "tarjeta bandeja", id: "bandeja" });
@@ -1411,6 +1660,11 @@ function fichaMaquina(m) {
   const f = el("div", { class: "ficha" }), b = el("div", { class: "bloques" });
   f.append(b);
   b.append(bloqueMaquina(m), bloqueControl(m.dam, m.k));
+  b.append(bloque("Dónde está", "pin", [
+    ["Tenedor", m.ten ? `<a href="#clientes" data-tenedor="${esc(m.ten)}">${esc((D.clientes[m.ten] || {}).nombre || m.ten)}</a>` : "Sin identificar: falta el XML de la venta o la guía de entrega del importador"],
+    ["Último rastro", m.ult ? `${fecha(m.ult.f)} · ${esc(m.ult.lugar)} ${zonaH(m.ult.zona)} · guía ${esc(m.ult.guia)} <span class="etq">hace ${f0(m.ult.dias)} días</span>` : "Ninguna guía descargada nombra esta máquina"],
+    ["Antigüedad", m.edad != null ? `${NF1.format(m.edad)} años desde la DAM` : ""],
+    ["Salida", m.sal ? `<a href="#salidas" data-salida="${esc(m.sal)}">Expediente ${esc(m.sal)}</a>` : ""]], { clase: m.sal ? "alerta" : !m.ten && !m.ult ? "pend" : "" }));
   for (const i of m.tras || []) b.append(bloqueTraslado(i, D.traslados[i] && D.traslados[i].salida, null));
   for (const cpe of m.ventas || []) {
     const c = IDX.caso.get(cpe), v = IDX.venta.get(cpe);
@@ -1424,7 +1678,7 @@ function fichaMaquina(m) {
 }
 
 function vistaMaquinas(sec) {
-  sec.append(el("h2", {}, "Máquinas"),
+  sec.append(el("h2", {}, "Parque de máquinas con beneficio"),
     el("p", { class: "nota" }, "Cada fila es una serie de maquinaria de una DAM de importación para el consumo. La columna «Control» resume la situación de su DAM en el cuaderno de la IA; al abrir la fila se ven los tributos, las NCN, las RI, los traslados y las otras máquinas de la misma DAM."));
   const trs = D.traslados.filter(t => t.es_maq && t.f >= D.meta.desde);
   if (trs.length) {
@@ -1451,8 +1705,10 @@ function vistaMaquinas(sec) {
     sec.append(ts);
   }
   const t = tarjeta(); sec.append(t);
-  t.append(leyendaMarcas(["usada", "dep", "exp", "tras", "sinreg", "venta"]));
+  t.append(leyendaMarcas(["sal", "sinrastro", "usada", "dep", "exp", "tras", "sinreg", "venta"]));
   const estado = m => ctlEstado((D.dams[m.dam] || {}).ctl, m.dest);
+  const rastro = m => m.sal ? "Salió a la ZTC (ver Salidas)" : m.ten ? (m.ult ? "Con tenedor y guía" : "Con tenedor, sin guía") : m.ult ? "Con guía, sin tenedor" : "Sin tenedor ni guía";
+  const nomTen = m => m.ten ? ((D.clientes[m.ten] || {}).nombre || m.ten) : "";
   const resumenMaq = rs => `<span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "máquina" : "máquinas"}</span><span class="sub-g">CIF USD ${f0(rs.reduce((a, r) => a + (r.cif || 0), 0))}</span>` +
     (rs.some(r => r.ventas.length) ? `<span class="sub-g">${rs.filter(r => r.ventas.length).length} con venta enlazada</span>` : "") + `</span>`;
   const prioDam = k => { const d = D.dams[k] || {}, c = d.ctl; return !c ? (d.dest === "271" ? 0 : 2) : 1; };   // primero las que faltan en el cuaderno
@@ -1474,15 +1730,27 @@ function vistaMaquinas(sec) {
       { k: "dest", t: "Destino", f: v => destT(v) },
       { t: "Control", v: estado, h: r => { const c = (D.dams[r.dam] || {}).ctl; return `<span class="etq ${ctlClase(c, r.dest)}">${esc(ctlEstado(c, r.dest))}</span>`; } },
       { t: "Venta", v: r => r.ventas.map(folio).join(", "), h: r => r.ventas.map(c => `<a href="#alertas" data-caso="${esc(c)}">${esc(folio(c))}</a>`).join(", ") || "–" },
+      { t: "Tenedor", v: nomTen, largo: 1, h: r => r.ten ? `<a href="#clientes" data-tenedor="${esc(r.ten)}">${esc(nomTen(r))}</a>` : `<span class="etq pend">sin identificar</span>` },
+      { t: "Último rastro", v: r => r.ult ? r.ult.f : "", largo: 1, h: r => r.ult ? `${fecha(r.ult.f)} · ${esc(r.ult.lugar)} ${zonaH(r.ult.zona)}` : "–", csv: r => r.ult ? `${r.ult.f} ${r.ult.lugar} (${r.ult.zona})` : "" },
+      { k: "edad", t: "Años", n: 1, f: v => v == null ? "" : NF1.format(v) },
       { k: "cif", t: "CIF USD", n: 1, f: v => f0(v) }],
-    filtros: [{ t: "Destino", campo: "dest", valor: r => destT(r.dest) }, { t: "Tipo", campo: "cat", valor: r => r.cat },
-      { t: "Control", campo: "ctl", valor: estado }, { t: "Indicador", campo: "mk", valor: r => marcasT(r.mk), opciones: ["usada", "dep", "exp", "tras", "sinreg", "venta"].map(k => MARCAS[k].t) }] });
+    filtros: [{ t: "Rastro", campo: "rastro", valor: rastro }, { t: "Destino", campo: "dest", valor: r => destT(r.dest) }, { t: "Tipo", campo: "cat", valor: r => r.cat },
+      { t: "Control", campo: "ctl", valor: estado }, { t: "Indicador", campo: "mk", valor: r => marcasT(r.mk), opciones: ["sal", "sinrastro", "usada", "dep", "exp", "tras", "sinreg", "venta"].filter(k => D.maquinas.some(m => (m.mk || []).includes(k))).map(k => MARCAS[k].t) }] });
 }
 
 function fichaCliente(cl) {
   const f = el("div", { class: "ficha" }), b = el("div", { class: "bloques" });
   f.append(b);
   b.append(bloqueComprador(cl));
+  const tramos = (cl.cob_t || []).map(([d, h]) => `${fecha(d)} al ${fecha(h)}`).join("; ");
+  const br = bloque("Riesgo de que mueva la máquina", "ruta", [
+    ["Puntaje", `<span class="riesgo ${(cl.riesgo || 0) >= 4 ? "a" : (cl.riesgo || 0) >= 2 ? "m" : ""}">${f0(cl.riesgo || 0)}</span> ${esc((cl.porque || []).join("; ") || "sin indicios")}`],
+    ["Perfil", esc(cl.perfil || "")], ["Máquinas sin IGV", f0(cl.n_sin || 0)],
+    ["Salidas", (cl.salidas || []).map(id => `<a href="#salidas" data-salida="${esc(id)}">${esc(id)}</a> ${estSalH(IDX.sal.get(id) || { estado: "" })}`).join("<br>")],
+    ["Guías consultadas", !cl.gre_ok ? "No tiene RUC para consultar guías" : tramos ? `${Math.round((cl.cob || 0) * 100)} % del tiempo desde la compra: ${esc(tramos)}` : "Ninguna como remitente desde la compra"],
+  ], { clase: (cl.riesgo || 0) >= 4 ? "alerta" : "" });
+  if (cl.gre_ok) br.append(el("div", { class: "ficha-acc", html: `<button class="btn claro" type="button" data-lista-ruc="${esc(cl.ruc)}" data-lista-nombre="${esc(cl.nombre)}" data-lista-desde="${esc(isoMas(cl.primera, -3))}" data-lista-grupo="tenedor">${ic("camion")}Buscar sus guías desde la compra</button>` }));
+  b.append(br);
   const filas = cl.cpes.map(cpe => {
     const v = IDX.venta.get(cpe), c = IDX.caso.get(cpe);
     return `<li>${c ? `<a href="#alertas" data-caso="${esc(cpe)}">${esc(folio(cpe))}</a>` : esc(folio(cpe))} · ${fecha(v.f)} · ${esc(v.desc)} · ${montoH(v)}${c ? " · " + NIVEL(c.nivel) : ""}</li>`;
@@ -1492,12 +1760,16 @@ function fichaCliente(cl) {
 }
 
 function vistaClientes(sec) {
-  sec.append(el("h2", {}, "Compradores de maquinaria"),
-    el("p", { class: "nota" }, "Solo quienes compraron maquinaria en el periodo (sin facturas anuladas ni anticipos). Domicilio fiscal y actividad del padrón y de la consulta múltiple de RUC; el domicilio es el vigente hoy."));
+  sec.append(el("h2", {}, "Tenedores"),
+    el("p", { class: "nota" }, "Quienes compraron maquinaria al importador (sin facturas anuladas ni anticipos), ordenados por el riesgo de que muevan la máquina a la ZTC. " +
+      "El puntaje suma: ya movió maquinaria a la ZTC (4), guía a la ZTC dada de baja (3), domicilio fuera de la ZTE (3), zona de frontera con la ZTC (2), alquiler o consorcio (2), " +
+      "constructora o transporte (1), varias máquinas sin IGV (1 o 2) y RUC reciente o no habido (1). «Guías» indica qué parte del tiempo desde la compra tiene guías consultadas."));
   const t = tarjeta(); sec.append(t);
   const mk = c => [c.zona === "ZTC" ? "ztc" : c.zona === "ZTE" ? "zte" : c.zona === "Extranjero" ? "ext" : "", c.tipo === "Entidad pública" ? "pub" : c.tipo === "Persona natural" ? "pn" : "",
     c.rev ? "rev" : "", c.nuevo ? "nuevo" : "", c.no_habido ? "nohab" : "", c.n_igv ? "igv" : ""].filter(Boolean);
   const filas = Object.values(D.clientes).map(c => ({ ...c, mk: mk(c) }));
+  const nivelR = c => (c.riesgo || 0) >= 4 ? "Alto (4 o más)" : (c.riesgo || 0) >= 2 ? "Medio (2 o 3)" : "Bajo (0 o 1)";
+  const cobT = c => !c.gre_ok ? "Sin RUC para consultar" : (c.cob || 0) >= 0.8 ? "Consultadas" : (c.cob || 0) > 0 ? "En parte" : "Sin consultar";
   t.append(leyendaMarcas(["ztc", "zte", "ext", "pub", "pn", "rev", "nuevo", "nohab", "igv"]));
   const resumenCli = rs => `<span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "comprador" : "compradores"}</span><span class="sub-g">${f0(rs.reduce((a, r) => a + r.n, 0))} ventas</span>` +
     (rs.some(r => r.alta) ? `${NIVEL("Alta")} ${rs.reduce((a, r) => a + r.alta, 0)}` : "") + (rs.some(r => r.media) ? ` ${NIVEL("Media")} ${rs.reduce((a, r) => a + r.media, 0)}` : "") + `</span>`;
@@ -1508,14 +1780,20 @@ function vistaClientes(sec) {
     { id: "tipo", t: "Tipo de comprador", clave: r => r.tipo, orden: ordenCli, cabecera: (k, rs) => `<b class="g">${esc(k)}</b>` + resumenCli(rs) },
   ];
   tablaClientes = tabla(t, { id: "compradores", grupos: GRUPOS_CLI, ph: "Buscar comprador, RUC, actividad…", porPag: 25, archivo: "compradores.csv", filas, detalle: fichaCliente,
-    orden: { i: 6, d: -1 },
-    cols: [{ t: "Indicadores", v: r => marcasT(r.mk).join("; "), h: r => marcasH(r.mk) },
-      { k: "nombre", t: "Comprador", largo: 1 }, { k: "ruc", t: "RUC / doc.", c: 1 },
+    orden: { i: 0, d: -1 },
+    cols: [{ k: "riesgo", t: "Riesgo", n: 1, h: r => `<span class="riesgo ${(r.riesgo || 0) >= 4 ? "a" : (r.riesgo || 0) >= 2 ? "m" : ""}" title="${esc((r.porque || []).join("; "))}">${f0(r.riesgo || 0)}</span>`,
+        csv: r => `${r.riesgo || 0} (${(r.porque || []).join("; ")})` },
+      { k: "nombre", t: "Tenedor", largo: 1 },
+      { t: "Por qué", v: r => (r.porque || []).join("; "), largo: 1 },
+      { t: "Guías", v: r => r.gre_ok ? (r.cob || 0) : -1, h: r => !r.gre_ok ? "–" : `<span class="etq ${(r.cob || 0) >= 0.8 ? "ok" : (r.cob || 0) > 0 ? "pend" : ""}">${Math.round((r.cob || 0) * 100)} %</span>`, csv: r => cobT(r) },
+      { t: "Indicadores", v: r => marcasT(r.mk).join("; "), h: r => marcasH(r.mk) },
+      { k: "ruc", t: "RUC / doc.", c: 1 }, { k: "perfil", t: "Perfil" },
       { k: "zona", t: "Zona", h: r => zonaH(r.zona), v: r => zonaT(r.zona) }, { k: "lugar", t: "Domicilio fiscal", largo: 1 },
       { k: "actividad", t: "Actividad", largo: 1 }, { k: "n", t: "Máquinas", n: 1 }, { k: "n_igv", t: "Con IGV", n: 1 },
       { t: "Casos", v: r => r.alta * 100 + r.media, h: r => r.alta || r.media ? `${r.alta ? NIVEL("Alta") + " " + r.alta : ""} ${r.media ? NIVEL("Media") + " " + r.media : ""}` : "–", csv: r => `alta ${r.alta}; media ${r.media}` },
       { k: "usd", t: "USD", n: 1, f: v => v ? f0(v) : "–" }, { k: "pen", t: "S/", n: 1, f: v => v ? f0(v) : "–" }, { k: "ult", t: "Última compra", f: fecha, c: 1 }],
-    filtros: [{ t: "Zona", campo: "zona", valor: r => zonaT(r.zona) }, { t: "Tipo", campo: "tipo", valor: r => r.tipo },
+    filtros: [{ t: "Riesgo", campo: "riesgo", valor: nivelR, opciones: ["Alto (4 o más)", "Medio (2 o 3)", "Bajo (0 o 1)"] }, { t: "Guías", campo: "cob", valor: cobT },
+      { t: "Perfil", campo: "perfil", valor: r => r.perfil || "Otros" }, { t: "Zona", campo: "zona", valor: r => zonaT(r.zona) },
       { t: "Indicador", campo: "mk", valor: r => marcasT(r.mk), opciones: ["ztc", "zte", "ext", "pub", "pn", "rev", "nuevo", "nohab", "igv"].map(k => MARCAS[k].t) }] });
 }
 </script>
