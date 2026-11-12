@@ -25,7 +25,7 @@ La agrupación elegida en cada pestaña se recuerda en el navegador de quien la 
 
 ### Salidas: el expediente y sus pruebas
 
-Cada guía con partida en la ZTE y llegada en la ZTC cuyos bienes nombran una máquina (excavadora, retroexcavadora, cargador, minicargador, motoniveladora, rodillo, tractor, grupo electrógeno o motor marino) abre o alimenta un expediente. La máquina se identifica por la serie de la guía; si la guía cita una factura del importador, por la serie del XML; las guías del transportista heredan los bienes de la guía que sustentan.
+Cada guía con partida en la ZTE y llegada en la ZTC cuyos bienes nombran una máquina (excavadora, retroexcavadora, cargador, minicargador, motoniveladora, rodillo, tractor, grupo electrógeno o motor marino) abre o alimenta un expediente. La máquina se identifica por la serie de la guía; si la guía cita una factura del importador, por la serie del XML; las guías del transportista heredan los bienes de la guía que sustentan. Una guía sin serie se une a una máquina con serie del mismo dueño y tipo si están a 3 días o menos y coinciden en el destinatario, el lugar de llegada o el punto de partida; para el importador, que despacha muchas máquinas iguales desde el mismo almacén, no basta el punto de partida. Si la DAM resulta posterior a la salida, el enlace está mal: el expediente lo advierte y no usa esa DAM. Cuando la máquina parte de la zona de otra intendencia (Pucallpa, Iquitos), el expediente indica que la DAM y el traslado se confirman ahí.
 
 | Prueba | De dónde sale |
 |---|---|
@@ -46,7 +46,7 @@ Suma: ya movió maquinaria a la ZTC (4); guía a la ZTC dada de baja (3); domici
 ### Cola de búsqueda
 
 1. **Guías de remitente que cita un transportista hacia la ZTC**: la guía de transportista de la ZTE a la ZTC que no detalla la carga cita la guía del remitente; si esa no está descargada, se consulta directo por su número (primero las del importador, luego las de más peso). Las guías físicas (series 0001…) no están en el sistema de guías electrónicas y solo se cuentan.
-2. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, desde 60 antes de la primera conocida hasta 40 después de la última. Los 40 posteriores van marcados: pueden no existir todavía, y el extractor deja de probar la serie cuando 10 seguidos no existen. Un hueco que SUNAT ya confirmó que no existe no se vuelve a pedir.
+2. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, hasta 40 después de la última conocida y, hacia atrás, las necesarias para cubrir los últimos 4 años (según el ritmo con que la serie emite guías; si la primera conocida ya es anterior a ese plazo, no se retrocede). Los 40 posteriores van marcados: pueden no existir todavía, y el extractor deja de probar la serie cuando 10 seguidos no existen. Un hueco que SUNAT ya confirmó que no existe no se vuelve a pedir.
 3. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
 4. **Tenedores con más riesgo** sin guías consultadas desde la compra.
 5. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.

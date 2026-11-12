@@ -2021,12 +2021,20 @@ def main(a):
             grupos_s.setdefault(k_, {"gs": [], "maq": x})["gs"].append(i)
             if x["serie"] and not grupos_s[k_]["maq"]["serie"]:
                 grupos_s[k_]["maq"] = x
-    # Una guía sin serie del mismo dueño, del mismo tipo de máquina y a 3 días o menos de otra con serie es la misma máquina
+    # Una guía sin serie es la misma máquina que otra con serie si son del mismo dueño y tipo de máquina, están a 3 días o menos
+    # y coinciden en el destinatario, el lugar de llegada o el punto de partida. Para el importador, que despacha muchas
+    # máquinas iguales a la vez desde el mismo almacén, no basta el punto de partida.
+    def mismo_envio(i, j, es_imp):
+        gi, gj = guias[i], guias[j]
+        igual = lambda a_, b_: bool(a_) and a_ == b_
+        return (abs((pd.Timestamp(gi["f"]) - pd.Timestamp(gj["f"])).days) <= 3
+                and (igual(gi["de"].get("ruc"), gj["de"].get("ruc")) or igual(gi["l"].get("u"), gj["l"].get("u"))
+                     or (not es_imp and igual(gi["p"].get("u"), gj["p"].get("u")))))
     for k_ in [k for k in grupos_s if k.startswith("sin:")]:
         ruc_d, cat_d = k_[4:].split("|")
-        f_sin = [pd.Timestamp(guias[i]["f"]) for i in grupos_s[k_]["gs"]]
+        sin_gs = grupos_s[k_]["gs"]
         cand = [k2 for k2, v in grupos_s.items() if not k2.startswith("sin:") and v["maq"]["cat"] == cat_d
-                and any(dueno(guias[i])["ruc"] == ruc_d and min(abs((pd.Timestamp(guias[i]["f"]) - f).days) for f in f_sin) <= 3 for i in v["gs"])]
+                and any(dueno(guias[i])["ruc"] == ruc_d and mismo_envio(i, j, ruc_d == ruc_imp) for i in v["gs"] for j in sin_gs)]
         if len(cand) == 1:
             grupos_s[cand[0]]["gs"] += grupos_s.pop(k_)["gs"]
     # Las guías sin serie de un mismo dueño y tipo se separan por viaje (más de 20 días entre guías = otra salida)
@@ -2130,6 +2138,8 @@ def main(a):
         circ = circ_u.get(g0["p"]["u"], "")
         if tras is False and circ and circ != "IA TARAPOTO":
             tras, tras_nota = None, f"No figura en el cuaderno de Tarapoto, pero la máquina partió de la circunscripción de la {circ}: confirmar ahí"
+        elif tras is None and not tras_nota and circ and circ != "IA TARAPOTO":
+            tras_nota = f"La máquina partió de la circunscripción de la {circ}: la DAM y la solicitud de traslado se confirman con esa intendencia"
         if ver:                             # lo que verificó el equipo manda sobre lo deducido
             if ver.get("dam") or ver.get("f_dam") or ver.get("imp"):
                 dam.update({"dam": ver.get("dam") or dam["dam"], "serie": ver.get("serie_dam") or dam["serie"], "f": ver.get("f_dam") or dam["f"],
@@ -2141,6 +2151,13 @@ def main(a):
                 tras_nota = ((f"Con solicitud de traslado: {ver['exp']}" if ver.get("exp") else "Con solicitud de traslado") if tras
                              else "Sin solicitud de traslado") + " (verificación del equipo)"
         edad = anios_entre(dam["f"], g0["f"])
+        # Una máquina no puede salir antes de importarse: si la DAM es posterior a la salida, la serie o el enlace están mal
+        aviso_dam = ""
+        if dam.get("f") and (dam["f"] > g0["f"] if len(dam["f"]) == 10 else dam["f"][:4] > g0["f"][:4]):
+            aviso_dam = (f"Ojo: la DAM {dam['dam']} ({ftx(dam['f']) if len(dam['f']) == 10 else dam['f']}) es posterior a la salida ({ftx(g0['f'])}): "
+                         "la serie o el enlace con la guía pueden estar mal. Revisarlo antes de seguir.")
+            dam = {**dam, "benef": None, "fuente": "DAM posterior a la salida: revisar"}
+            edad = None
         plazo = None if edad is None else edad <= PLAZO
         mov, rec = dueno(g0), g0["de"]
         venta_m = norm(g0["motivo"]).startswith("VENTA")
@@ -2182,7 +2199,9 @@ def main(a):
             if not serie:
                 pasos.append(f"Pedir la serie a {nom(ten)}: la guía no la indica. Revise «Ver guía» por si aparece en otro campo, o requiérale la factura o la ficha técnica.")
             elif dam["benef"] is None:
-                pasos.append(f"Buscar en el sistema la DAM de la serie {serie} y anotarla en el Excel de consultas (hoja «Salidas por verificar»): DAM, fecha, importador y si tiene el beneficio.")
+                antes_ = g0["f"] < fstr(m.f.min())
+                pasos.append(f"Buscar en el sistema la DAM de la serie {serie} y anotarla en el Excel de consultas (hoja «Salidas por verificar»): DAM, fecha, importador y si tiene el beneficio."
+                             + (f" La salida es anterior a las DAM que tiene el tablero (desde el {ftx(fstr(m.f.min()))}), así que la DAM no está en sus datos." if antes_ else ""))
             if tras is None and dam["benef"] is not False:
                 pasos.append((tras_nota + ".") if tras_nota else "Confirmar en el cuaderno o en el sistema que la serie no tiene solicitud de traslado y anotarlo en el Excel.")
             if not vig and ubic.get("zona") == "ZTE":
@@ -2205,6 +2224,8 @@ def main(a):
                                 "El distrito puede estar mal puesto y la máquina no haber salido: confirmarlo antes de seguir.")
         if exportada and estado not in ("Descartada",):
             pasos.insert(0, f"La venta {cpe[3:]} es a un no domiciliado y tiene DAM de exportación {c_['exp']}: confirmar que la salida corresponde a esa exportación y que tuvo su traslado.")
+        if aviso_dam:
+            pasos.insert(0, aviso_dam)
         transp = {}
         for i in gs_:
             if guias[i]["tipo"] == "Transportista":
@@ -2361,14 +2382,30 @@ def main(a):
                                                                    "numero": str(int(d_["num"].split("-")[1]))}}
                                    for _, t_, _, d_, g in citadas]})
     # 1. Guías de máquinas del importador (series TP): comprador, serie y lugar de entrega de cada máquina
-    tp = {}
+    tp, tp_f = {}, {}
     for g in guias:
         if g["em"]["ruc"] == ruc_imp and re.fullmatch(r"TP\d{2}-\d+", g["num"]):
-            tp.setdefault(g["num"].split("-")[0], set()).add(int(g["num"].split("-")[1]))
+            sr_, n_ = g["num"].split("-")
+            tp.setdefault(sr_, set()).add(int(n_))
+            if g["f"]:
+                tp_f[(sr_, int(n_))] = g["f"]
+    corte_tp = (hoy - timedelta(days=round(365.25 * PLAZO))).isoformat()     # inicio del plazo de 4 años
+
+    def inicio_serie(sr, nums):
+        """Primer número por consultar: hacia atrás, lo necesario para cubrir el plazo de 4 años según el ritmo de la serie."""
+        lo, hi = min(nums), max(nums)
+        f_lo, f_hi = tp_f.get((sr, lo), ""), tp_f.get((sr, hi), "")
+        if not f_lo:
+            return max(1, lo - 60)
+        if f_lo <= corte_tp:
+            return lo                                    # la serie ya llega al inicio del plazo
+        dias = max(30, (date.fromisoformat(f_hi) - date.fromisoformat(f_lo)).days) if f_hi else 365
+        faltan_d = (date.fromisoformat(f_lo) - date.fromisoformat(corte_tp)).days
+        return max(1, lo - int(max(hi - lo, 1) / dias * faltan_d * 1.2) - 10)
     faltan_tp = []
     for sr, nums in sorted(tp.items()):
         hi = max(nums)
-        for n_ in range(max(1, min(nums) - 60), hi + 41):
+        for n_ in range(inicio_serie(sr, nums), hi + 41):
             if n_ in nums or (n_ < hi and f"{ruc_imp}-09-{sr}-{n_}" in no_ex):
                 continue                                 # ya descargada, o hueco que SUNAT confirmó que no existe
             faltan_tp.append((sr, n_, n_ > hi))          # posterior a la última conocida: puede no existir todavía
@@ -2376,6 +2413,7 @@ def main(a):
         cola.append({"id": "tp", "t": "Guías de máquinas del importador que faltan", "n": len(faltan_tp), "u": "guías por consultar",
                      "por": "Cada guía de las series " + ", ".join(sorted(tp)) + " trae la serie de la máquina, el comprador y el lugar de entrega. "
                             f"Hay {sum(len(v) for v in tp.values())} descargadas; con las que faltan se sabe quién tiene cada máquina. "
+                            "Hacia atrás se piden las necesarias para cubrir los últimos 4 años. "
                             "Los números posteriores a la última guía conocida pueden no existir todavía: el extractor deja de probar una serie "
                             "cuando 10 seguidos no existen.",
                      "busquedas": [{"etiqueta": f"Guía de máquinas {sr}-{n_}", "grupo": "importador",
