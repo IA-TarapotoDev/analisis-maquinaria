@@ -2132,7 +2132,8 @@ def main(a):
                 dam["benef"], dam["fuente"] = si_no(ver["benef"]), "Verificación del equipo"
             if si_no(ver.get("tras", "")) is not None:
                 tras = si_no(ver["tras"])
-                tras_nota = (f"Solicitud de traslado {ver.get('exp', '')}".strip() if tras else "Sin solicitud de traslado") + " (verificación del equipo)"
+                tras_nota = ((f"Con solicitud de traslado: {ver['exp']}" if ver.get("exp") else "Con solicitud de traslado") if tras
+                             else "Sin solicitud de traslado") + " (verificación del equipo)"
         edad = anios_entre(dam["f"], g0["f"])
         plazo = None if edad is None else edad <= PLAZO
         mov, rec = dueno(g0), g0["de"]
