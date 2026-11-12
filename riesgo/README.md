@@ -45,11 +45,12 @@ Suma: ya movió maquinaria a la ZTC (4); guía a la ZTC dada de baja (3); domici
 
 ### Cola de búsqueda
 
-1. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, desde 60 antes de la primera conocida hasta 40 después de la última.
-2. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
-3. **Tenedores con más riesgo** sin guías consultadas desde la compra.
-4. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.
-5. **Excel de consultas**: lo que solo se puede ver en el sistema.
+1. **Guías de remitente que cita un transportista hacia la ZTC**: la guía de transportista de la ZTE a la ZTC que no detalla la carga cita la guía del remitente; si esa no está descargada, se consulta directo por su número (primero las del importador, luego las de más peso). Las guías físicas (series 0001…) no están en el sistema de guías electrónicas y solo se cuentan.
+2. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, desde 60 antes de la primera conocida hasta 40 después de la última.
+3. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
+4. **Tenedores con más riesgo** sin guías consultadas desde la compra.
+5. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.
+6. **Excel de consultas**: lo que solo se puede ver en el sistema.
 
 ### Control de la DAM (cuaderno de la IA)
 
@@ -69,7 +70,7 @@ El tablero no consulta a SUNAT: arma listas de búsqueda que se copian y se pega
 
 | Botón | Qué busca |
 |---|---|
-| **Copiar la lista para el extractor** (pestaña Buscar, cola de búsqueda) | La búsqueda de cada paso de la cola: las guías de máquinas del importador que faltan (consulta directa por número), las guías posteriores de quien movió o recibió una máquina que ya salió, y las guías como remitente de los tenedores con más riesgo |
+| **Copiar la lista para el extractor** (pestaña Buscar, cola de búsqueda) | La búsqueda de cada paso de la cola: las guías de remitente que cita un transportista hacia la ZTC y las guías de máquinas del importador que faltan (consulta directa por número), las guías posteriores de quien movió o recibió una máquina que ya salió, y las guías como remitente de los tenedores con más riesgo |
 | **Seguir la máquina** (ficha de cada salida) | Las guías como remitente del tenedor y de quien recibió la máquina, desde 3 días antes de la salida hasta hoy, si aún no están consultadas |
 | **Lista** (tablas de Buscar y ficha de cada tenedor) | Las guías de ese RUC como remitente: desde su primera compra (tenedor), del último año (otro importador) o de los últimos dos años (transportista) |
 | **Lista del día** (pestaña Buscar, «Listas de rutina») | Ayer y hoy: los compradores **reincidentes** (con al menos un caso alto o medio) como remitentes y destinatarios, el importador como remitente y destinatario, y los **transportistas vigilados** (guías de remitente, transportista y por eventos) |

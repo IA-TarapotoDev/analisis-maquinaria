@@ -2318,6 +2318,41 @@ def main(a):
 
     # ---------- Dónde buscar ahora: la cola de búsquedas, de más a menos rendidora ----------
     cola = []
+    # 0. Guías de remitente que cita un transportista hacia la ZTC: el transportista no detalla la carga y la del remitente falta
+    def toneladas(p_):
+        p_ = str(p_ or "").upper()
+        m_ = re.search(r"\d[\d.,]*(?:E[+-]?\d+)?", p_)
+        try:
+            v_ = float(m_[0].replace(",", "")) if m_ else 0.0
+        except ValueError:
+            return 0.0
+        return v_ if "TNE" in p_ else v_ / 1000 if "KGM" in p_ else 0.0
+    claves_g = {g["clave"] for g in guias}
+    citadas, fisicas, vistas_c = [], 0, set()
+    for g in guias:
+        if g["tipo"] != "Transportista" or not g["vig"] or g["bienes"] or not (g["p"]["zona"] == "ZTE" and g["l"]["zona"] == "ZTC"):
+            continue
+        for d_ in g["docs"]:
+            c_ = f"{d_.get('ruc')}-09-{d_.get('num')}"
+            if d_.get("t") != "09" or c_ in claves_g or c_ in vistas_c or not ruc_valido(str(d_.get("ruc") or "")):
+                continue
+            vistas_c.add(c_)
+            if not re.fullmatch(r"[A-Z][A-Z0-9]{3}-\d+", str(d_.get("num") or "")):
+                fisicas += 1                    # guía física (serie 0001…): no está en el sistema de guías electrónicas
+                continue
+            citadas.append((d_["ruc"] != ruc_imp, -toneladas(g.get("peso")), g["f"], d_, g))
+    citadas.sort(key=lambda c: c[:3])
+    if citadas:
+        n_ci = sum(1 for c in citadas if not c[0])
+        cola.append({"id": "citadas", "t": "Guías de remitente que cita un transportista hacia la ZTC", "n": len(citadas), "u": "guías por consultar",
+                     "por": "Guías de transportista de la ZTE a la ZTC que no detallan la carga: lo que llevan está en la guía del remitente, que no está descargada. "
+                            + (f"{n_ci} {'es' if n_ci == 1 else 'son'} del importador. " if n_ci else "") + "Van primero las de más peso."
+                            + (f" Otras {fisicas} citan guías físicas, que solo se obtienen pidiéndolas al remitente." if fisicas else ""),
+                     "busquedas": [{"etiqueta": f"{d_['num']} de {(g['rem'] or {}).get('nombre') or d_['ruc']}: citada por {g['em']['nombre']} "
+                                               f"({g['num']}, {ftx(g['f'])}, {g['p']['lugar']} → {g['l']['lugar']}, {round(-t_, 1):g} t)",
+                                    "grupo": "citada", "directa": {"rucEmisor": d_["ruc"], "codCpe": "09", "serie": d_["num"].split("-")[0],
+                                                                   "numero": str(int(d_["num"].split("-")[1]))}}
+                                   for _, t_, _, d_, g in citadas]})
     # 1. Guías de máquinas del importador (series TP): comprador, serie y lugar de entrega de cada máquina
     tp = {}
     for g in guias:
