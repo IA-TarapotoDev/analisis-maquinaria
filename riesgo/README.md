@@ -47,10 +47,11 @@ Suma: ya movió maquinaria a la ZTC (4); guía a la ZTC dada de baja (3); domici
 
 1. **Guías de remitente que cita un transportista hacia la ZTC**: la guía de transportista de la ZTE a la ZTC que no detalla la carga cita la guía del remitente; si esa no está descargada, se consulta directo por su número (primero las del importador, luego las de más peso). Las guías físicas (series 0001…) no están en el sistema de guías electrónicas y solo se cuentan.
 2. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, hasta 40 después de la última conocida y, hacia atrás, las necesarias para cubrir los últimos 4 años (según el ritmo con que la serie emite guías; si la primera conocida ya es anterior a ese plazo, no se retrocede). Los 40 posteriores van marcados: pueden no existir todavía, y el extractor deja de probar la serie cuando 10 seguidos no existen. Un hueco que SUNAT ya confirmó que no existe no se vuelve a pedir.
-3. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
-4. **Tenedores con más riesgo** sin guías consultadas desde la compra.
-5. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.
-6. **Excel de consultas**: lo que solo se puede ver en el sistema.
+3. **Facturas de máquinas sin comprador identificado**: ventas de maquinaria sin serie enlazada (ni XML ni guía con la serie). La factura detallada trae la serie y dice quién compró cada máquina, aunque la venta no tenga indicios: un comprador de la ZTE que compró sin IGV no forma caso, pero su máquina puede terminar en la ZTC. Se descargan a mano del portal del importador; la lista «Comprobantes por descargar» (pestaña Ventas) las ordena por el riesgo del comprador (prioridades 4 a 6).
+4. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
+5. **Tenedores con más riesgo** sin guías consultadas desde la compra.
+6. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.
+7. **Excel de consultas**: lo que solo se puede ver en el sistema.
 
 ### Control de la DAM (cuaderno de la IA)
 
@@ -171,7 +172,7 @@ Todas las opciones de `generar_datos.py` son opcionales salvo los tres archivos 
   python3 -I riesgo/scripts/extraer_domicilios.py padron_reducido_ruc.zip CPEs_EMITIDOS.txt /ruta/privada/domicilios.csv
   ```
 - **Consulta múltiple de RUC** (`--consulta-ruc`, ZIP o TXT, hasta 100 RUC por consulta): actividad económica, fecha de inscripción y, si el padrón no lo trae, el domicilio. La consulta pública no muestra el domicilio de las personas naturales.
-- **XML de las facturas** (`--facturas-xml`, archivos, carpetas o ZIP, también ZIP dentro de ZIP; los 7z y RAR se descomprimen antes): se leen facturas y notas de crédito (UBL 2.1). De cada ítem se extraen la serie de la máquina y del motor, el modelo, el año y la afectación del IGV; la máquina se enlaza con su DAM y el caso se confirma o se descarta. La nota de crédito indica con exactitud la factura que anula. El comprobante completo se puede ver desde la ficha («Ver factura»).
+- **XML de las facturas** (`--facturas-xml`, archivos, carpetas o ZIP, también ZIP dentro de ZIP; los 7z y RAR se descomprimen antes): se leen facturas y notas de crédito (UBL 2.1). De cada ítem se extraen la serie de la máquina y del motor, el modelo, el año y la afectación del IGV; la máquina se enlaza con su DAM y el caso se confirma o se descarta. La nota de crédito indica con exactitud la factura que anula. El comprobante completo se puede ver desde la ficha («Ver factura»). La lista «Comprobantes por descargar del portal» (pestaña Ventas, con CSV) indica cuáles faltan: prioridad 1, casos de nivel alto; 2, traslados probables; 3, cadenas de anulación; 4 a 6, ventas de maquinaria sin serie enlazada, según el riesgo del comprador.
 - **Cuaderno de control de la IA** (`--control-ia`, xlsx o xlsm): hojas ConsolidadoT (con la columna «Resultado_solicitud», que en el cuaderno actual se llama «Resultado_Solicud»), Ingreso de DAM, Traslados (con las series de cada DAM), ConsolidadoA2 y Complejidad. Las hojas de los especialistas, NCN y Hoja1 ya no se leen.
 - **Transportistas vigilados** (`--transportistas`, TXT): un RUC por línea, opcionalmente seguido del nombre (`20123456789 TRANSPORTES EJEMPLO SAC`). Se ignoran las líneas vacías, las que empiezan con `#`, los repetidos y los RUC no válidos (se avisa el número de línea). Entran en la «Lista del día» de guías de remisión.
 - **Casos documentados a mano** (`--trazabilidad`, CSV con `cpe, serie_maquina, serie_motor, modelo, ubicacion_entrega, direccion_entrega, fuente, nota`; `ubicacion_entrega` como «DISTRITO, PROVINCIA, DEPARTAMENTO»): por ejemplo, la representación impresa de una factura con el lugar de entrega.

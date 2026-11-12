@@ -1250,7 +1250,11 @@ function vistaResumen(sec) {
 
   if (D.pendientes.length) {
     const n1 = D.pendientes.filter(p => p.prio === 1).length;
-    const tpen = tarjeta("Comprobantes por descargar del portal", `${f0(D.pendientes.length)} comprobantes sin XML: ${f0(n1)} de casos de nivel alto, ${f0(D.pendientes.filter(p => p.prio === 2).length)} para confirmar traslados probables y ${f0(D.pendientes.filter(p => p.prio === 3).length)} de cadenas de anulación. Al subir sus XML, cada máquina se enlaza con su DAM y el caso se confirma o se descarta.`);
+    const nP = k => D.pendientes.filter(p => p.prio === k).length, nSin = D.pendientes.filter(p => p.prio >= 4).length;
+    const partes = [[nP(1), "de casos de nivel alto"], [nP(2), "para confirmar traslados probables"], [nP(3), "de cadenas de anulación"],
+      [nSin, `de máquinas sin serie enlazada (${f0(nP(4))} de compradores de riesgo alto)`]].filter(([n]) => n).map(([n, t]) => `${f0(n)} ${t}`);
+    const tpen = tarjeta("Comprobantes por descargar del portal", `${f0(D.pendientes.length)} comprobantes sin XML: ${partes.join(", ")}. ` +
+      "La factura detallada trae la serie de la máquina: al subir los XML, cada máquina queda ligada a su comprador y a su DAM.");
     tpen.append(el("div", { class: "acc" }, el("button", { class: "btn principal", type: "button", onclick: () => { location.hash = "alertas"; setTimeout(() => { const d = $("#bandeja"); d.open = true; d.scrollIntoView({ block: "start" }); }, 50); } }, "Abrir la lista"),
       el("button", { class: "btn", type: "button", onclick: () => csvPendientes() }, "Descargar CSV")));
     sec.append(tpen);
@@ -1402,6 +1406,10 @@ function vistaBuscar(sec) {
     const nota = el("p", { class: "nota", role: "status" });
     if (c.busquedas) cuerpo.append(el("div", { class: "ficha-acc" }, botonPedido("camion", "Copiar la lista para el extractor", i === 0 ? "btn principal" : "btn claro", () => pedidoGRE("cola-" + c.id, c.t, conTipos(c.busquedas)), nota)), nota);
     if (c.excel && (D.adjuntos || {})[XLSX_CONSULTAS]) cuerpo.append(el("div", { class: "ficha-acc" }, el("button", { class: "btn claro", type: "button", onclick: () => descargarAdjunto(XLSX_CONSULTAS), html: ic("descarga") + "Descargar Excel de consultas" })));
+    if (c.facturas) cuerpo.append(el("div", { class: "ficha-acc", html: portalLink() },
+      el("button", { class: "btn claro", type: "button", html: ic("ventas") + "Ver la lista",
+        onclick: () => { location.hash = "alertas"; setTimeout(() => { const d = $("#bandeja"); if (d) { d.open = true; d.scrollIntoView({ block: "start" }); } }, 50); } }),
+      el("button", { class: "btn claro", type: "button", html: ic("descarga") + "Descargar CSV", onclick: () => csvPendientes() })));
     lista.append(el("div", { class: "paso" }, el("div", { class: "num" }, String(i + 1)), cuerpo));
   });
   if (!D.cola.length) lista.append(el("p", { class: "nota" }, "No hay búsquedas pendientes."));
@@ -1625,7 +1633,7 @@ function vistaAlertas(sec) {
     const d = el("details", { class: "tarjeta bandeja", id: "bandeja" });
     d.append(el("summary", { html: `<h3>Comprobantes por descargar del portal (${f0(D.pendientes.length)})</h3><span class="etq">copie tipo, folio, fecha y monto</span>` }));
     const dentro = el("div", { class: "dentro" });
-    dentro.append(el("p", { class: "nota", html: `Prioridad 1: casos de nivel alto. 2: confirmar un traslado probable. 3: cadenas de anulación. Descargue el XML de cada uno y súbalos juntos (carpeta o ZIP): el tablero se regenera con la serie de cada máquina. ${portalLink()}` }));
+    dentro.append(el("p", { class: "nota", html: `Prioridad 1: casos de nivel alto. 2: confirmar un traslado probable. 3: cadenas de anulación. 4 a 6: máquinas sin serie enlazada, según el riesgo del comprador (alto, medio o bajo); su factura dice quién compró cada máquina. Descargue el XML de cada uno y súbalos juntos (carpeta o ZIP): el tablero se regenera con la serie de cada máquina. ${portalLink()}` }));
     tabla(dentro, { buscar: true, ph: "Buscar folio o cliente…", porPag: 20, archivo: "comprobantes_por_descargar.csv", filas: D.pendientes,
       cols: [{ k: "prio", t: "Prioridad", n: 1 }, { t: "Tipo", v: r => portalDatos(r.cpe, r.f, r.tot).tipo, h: r => copiable(portalDatos(r.cpe, r.f, r.tot).tipo) },
         { t: "Folio", v: r => folio(r.cpe), h: r => copiable(folio(r.cpe)) }, { t: "Fecha", v: r => portalDatos(r.cpe, r.f, r.tot).fecha, h: r => copiable(portalDatos(r.cpe, r.f, r.tot).fecha) },

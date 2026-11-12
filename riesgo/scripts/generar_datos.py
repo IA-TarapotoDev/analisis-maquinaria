@@ -2343,6 +2343,21 @@ def main(a):
         c["cob"], c["cob_t"] = cobertura(doc, c["primera"]) if ruc_valido(doc) else (None, [])
         c.update({"riesgo": pts, "porque": por, "frontera": frontera, "n_sin": n_sin, "salidas": [x["id"] for x in sal_c], "gre_ok": ruc_valido(doc)})
 
+    # ---------- Comprobantes por descargar 4 a 6: ventas de maquinaria sin serie enlazada ----------
+    # La factura detallada (XML) trae la serie: dice qué máquina compró cada cliente, aunque la venta no tenga indicios
+    # (un comprador de la ZTE que compró sin IGV no forma caso, pero su máquina puede terminar en la ZTC).
+    con_serie_v = {c_ for m_ in maquinas for c_ in m_["ventas"]} | set(facturas)
+    con_serie_v |= {cpe_ for i, cpe_ in venta_guia.items() if any(x["serie"] for x in maquinas_guia(i))}
+    MAQ_V = MAQ_GUIA | {"Motor diésel"}
+    for v in ventas:
+        if (v["est"] != "Vigente" or not v["cpe"].startswith("01-") or v["cat"] not in MAQ_V or v["cpe"] in con_serie_v
+                or (v["vv"] or 0) < MENOR.get(v["mon"], 0)):
+            continue
+        rz = (cli.get(v["ruc"]) or {}).get("riesgo", 0) or 0
+        pendiente(v["cpe"], 4 if rz >= 4 else 5 if rz >= 2 else 6,
+                  "Máquina sin serie enlazada; comprador de riesgo " + ("alto" if rz >= 4 else "medio" if rz >= 2 else "bajo"))
+    n_fac = sum(1 for p_ in pendientes if p_["prio"] >= 4)
+
     # ---------- Dónde buscar ahora: la cola de búsquedas, de más a menos rendidora ----------
     cola = []
     # 0. Guías de remitente que cita un transportista hacia la ZTC: el transportista no detalla la carga y la del remitente falta
@@ -2419,6 +2434,14 @@ def main(a):
                      "busquedas": [{"etiqueta": f"Guía de máquinas {sr}-{n_}", "grupo": "importador",
                                     "directa": {"rucEmisor": ruc_imp, "codCpe": "09", "serie": sr, "numero": str(n_), **({"posterior": True} if post_ else {})}}
                                    for sr, n_, post_ in faltan_tp]})
+    # Facturas detalladas de las máquinas sin serie enlazada (se descargan a mano del portal del emisor)
+    if n_fac:
+        n4 = sum(1 for p_ in pendientes if p_["prio"] == 4)
+        cola.append({"id": "facturas", "t": "Facturas de máquinas sin comprador identificado", "n": n_fac, "u": "facturas por descargar del portal", "facturas": True,
+                     "por": "Cada factura detallada (XML) trae la serie de la máquina: con ella se sabe quién compró cada una, aunque la venta no tenga "
+                            "indicios (un comprador de la ZTE que compró sin IGV no forma caso, pero su máquina puede terminar en la ZTC). "
+                            + (f"Empiece por las {n4} de compradores de riesgo alto (prioridad 4). " if n4 else "")
+                            + "Descargue el XML de cada una del portal del importador y envíelos juntos (carpeta o ZIP)."})
     # 2. Seguir las máquinas que ya salieron: guías posteriores de quien la tiene y de quien la recibió
     seg, vistos = [], set()
     for x in salidas:
