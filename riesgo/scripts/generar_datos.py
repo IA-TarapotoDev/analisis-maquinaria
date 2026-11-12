@@ -808,13 +808,22 @@ def leer_guias(rutas, r_ubi):
                                  "version": str(d.get("version") or ""), "guias": len(d.get("guias") or [])})
         # Cobertura: periodos consultados de cada RUC como emisor o como destinatario (solo búsquedas completas)
         hecho = str(d.get("generadoEn") or p.get("generado") or "")[:10]      # día de la descarga: lo posterior no está consultado
+        # Descarga sin terminar: un RUC con guías aún sin detalle no cuenta como consultado
+        sin_terminar = set()
+        if str(d.get("estadoFinal") or "COMPLETADO") != "COMPLETADO":
+            for g in d.get("guias") or []:
+                if g.get("estado") == "no_procesada":
+                    lst_ = g.get("listado") or {}
+                    sin_terminar |= {str(lst_.get(k) or "").strip() for k in ("rucEmisor", "rucReceptor")} - {""}
+            if sin_terminar:
+                meta["sin_terminar"] = meta.get("sin_terminar", 0) + sum(1 for g in d.get("guias") or [] if g.get("estado") == "no_procesada")
         for b in d.get("busquedas") or []:
             de_, ha_ = str(b.get("desde") or "")[:10], str(b.get("hasta") or "")[:10]
             if es_iso(hecho) and es_iso(ha_) and ha_ > hecho:
                 ha_ = hecho
             if b.get("tipo") == "ok" and not b.get("incompleta") and es_iso(de_) and es_iso(ha_) and de_ <= ha_:
                 for rol, k in (("emisor", "rucEmisor"), ("receptor", "rucReceptor")):
-                    if b.get(k):
+                    if b.get(k) and str(b[k]).strip() not in sin_terminar:
                         meta["cobertura"].setdefault(str(b[k]).strip(), {}).setdefault(rol, []).append([de_, ha_])
         for b in d.get("busquedas") or []:
             caso = str(b.get("caso") or "").strip()
@@ -2391,16 +2400,22 @@ def main(a):
             if not re.fullmatch(r"[A-Z][A-Z0-9]{3}-\d+", str(d_.get("num") or "")):
                 fisicas += 1                    # guía física (serie 0001…): no está en el sistema de guías electrónicas
                 continue
-            citadas.append((d_["ruc"] != ruc_imp, -toneladas(g.get("peso")), g["f"], d_, g))
+            t_g = toneladas(g.get("peso"))
+            nom_r = norm((g["rem"] or {}).get("nombre") or "")
+            # Primero el importador, luego sus compradores de maquinaria y los remitentes del rubro; después, por peso
+            orden_r = (0 if d_["ruc"] == ruc_imp else 1 if d_["ruc"] in cli
+                       else 2 if re.search(r"MAQUIN|CONSTRUC|CONTRATIST|INGENIER|MINER|CONSORCIO|ALQUILER|EQUIPO|OBRAS|EDIFIC", nom_r) else 3)
+            citadas.append((orden_r, -(t_g if t_g <= 80 else 0), g["f"], d_, g))    # más de 80 t: peso mal declarado
     citadas.sort(key=lambda c: c[:3])
     if citadas:
-        n_ci = sum(1 for c in citadas if not c[0])
+        n_ci = sum(1 for c in citadas if c[0] == 0)
         cola.append({"id": "citadas", "t": "Guías de remitente que cita un transportista hacia la ZTC", "n": len(citadas), "u": "guías por consultar",
                      "por": "Guías de transportista de la ZTE a la ZTC que no detallan la carga: lo que llevan está en la guía del remitente, que no está descargada. "
-                            + (f"{n_ci} {'es' if n_ci == 1 else 'son'} del importador. " if n_ci else "") + "Van primero las de más peso."
+                            + (f"{n_ci} {'es' if n_ci == 1 else 'son'} del importador. " if n_ci else "")
+                            + "Van primero las del importador, las de sus compradores y las de remitentes de construcción, maquinaria o minería; después, las de más peso."
                             + (f" Otras {fisicas} citan guías físicas, que solo se obtienen pidiéndolas al remitente." if fisicas else ""),
                      "busquedas": [{"etiqueta": f"{d_['num']} de {(g['rem'] or {}).get('nombre') or d_['ruc']}: citada por {g['em']['nombre']} "
-                                               f"({g['num']}, {ftx(g['f'])}, {g['p']['lugar']} → {g['l']['lugar']}, {round(-t_, 1):g} t)",
+                                               f"({g['num']}, {ftx(g['f'])}, {g['p']['lugar']} → {g['l']['lugar']}" + (f", {round(-t_, 1):g} t)" if t_ else ")"),
                                     "grupo": "citada", "directa": {"rucEmisor": d_["ruc"], "codCpe": "09", "serie": d_["num"].split("-")[0],
                                                                    "numero": str(int(d_["num"].split("-")[1]))}}
                                    for _, t_, _, d_, g in citadas]})
