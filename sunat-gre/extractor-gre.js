@@ -36,7 +36,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '3.0.0';
+  const VERSION = '3.1.0';
   const API_LISTADO = 'https://api-intranet.sunat.peru/v1/contribuyente/gre/comprobantes';
   const PANEL_ID = 'gre-extractor-host';
   const ORIGEN_CORRECTO = 'https://intranet.sunat.peru';
@@ -126,6 +126,7 @@
     maxReintentos: 2,
     timeoutMs: 45000,
     maxErroresConsecutivos: 8,
+    maxNoExistenSerie: 10,      // consulta por número: tantos seguidos que no existen tras la última guía conocida = fin de la serie
     esperaConexionMin: 30,      // minutos que espera una conexión nueva antes de detenerse
     descargarJSON: true,        // al terminar: JSON para el tablero
     descargarExcel: true        // al terminar: Excel para revisar
@@ -133,6 +134,10 @@
 
   const ESTADOS_REINTENTABLES = new Set([429, 500, 502, 503, 504]);
   const COD_EXCESO = '2021';    // SUNAT: «se cuenta con más de (100) registros en el periodo consultado»
+  // Respuesta de SUNAT a una guía consultada por número que no existe (el código HTTP varía: 404, 400, 422 o 500)
+  const NO_EXISTE = /no\s+exist|inexistent|no\s+(se\s+)?(ha\s+)?encontr|no\s+encontrad|not\s+found|no\s+registrad/i;
+  /** ¿Es el detalle de una guía (y no un mensaje de error con código 200)? */
+  const pareceDetalle = (d) => esObjetoPlano(d) && ['traslado', 'emision', 'numSerie', 'numCpe'].some((k) => k in d);
   const BLOQUES_HORA = [1, 2, 3, 4, 5, 6];
   const TEXTO_BLOQUE = { 1: '00:00–03:59', 2: '04:00–07:59', 3: '08:00–11:59', 4: '12:00–15:59', 5: '16:00–19:59', 6: '20:00–23:59' };
   const TEXTO_ROL = { receptor: 'receptor', emisor: 'emisor', ambos: 'emisor y receptor' };
@@ -475,7 +480,8 @@
   /**
    * Revisa la lista que llega del tablero (formato GRE_PEDIDO). Cada búsqueda es:
    *   - de listado: { etiqueta, caso, grupo, rucEmisor?, rucReceptor?, tipos, desde, hasta }
-   *   - directa (guía citada en una factura): { etiqueta, caso, directa: { rucEmisor, codCpe, serie, numero } }
+   *   - directa (por número): { etiqueta, caso, directa: { rucEmisor, codCpe, serie, numero, posterior? } }
+   *     «posterior»: el número es mayor que la última guía conocida de la serie (puede no existir todavía).
    * Las fechas pueden ser relativas: «hoy», «ayer» u «hoy-N».
    */
   function validarPedido(entrada) {
@@ -503,7 +509,7 @@
         const ruc = limpio(d.rucEmisor), cod = limpio(d.codCpe).toUpperCase() || '09';
         const serie = limpio(d.serie).toUpperCase(), numero = limpio(d.numero).replace(/^0+(?=\d)/, '');
         if (!rucValido(ruc) || !TIPOS_GRE[cod] || !/^[A-Z0-9]{4}$/.test(serie) || !/^\d{1,8}$/.test(numero)) { ignoradas++; return; }
-        busquedas.push({ tipo: 'directa', etiqueta, caso, grupo, rucEmisor: ruc, codCpe: cod, serie, numero });
+        busquedas.push({ tipo: 'directa', etiqueta, caso, grupo, rucEmisor: ruc, codCpe: cod, serie, numero, posterior: d.posterior === true });
         return;
       }
       const rucE = limpio(b.rucEmisor), rucR = limpio(b.rucReceptor);
@@ -530,7 +536,7 @@
     const desde = listados.map((b) => b.desde).sort()[0], hasta = listados.map((b) => b.hasta).sort().slice(-1)[0];
     let t = `«${p.titulo}»: ${listados.length} búsqueda(s) de ${rucs.size} RUC`;
     if (desde) t += desde === hasta ? `, del ${dmy(desde)}` : `, del ${dmy(desde)} al ${dmy(hasta)}`;
-    if (directas.length) t += `; ${directas.length} guía(s) citada(s) en facturas`;
+    if (directas.length) t += `; ${directas.length} guía(s) por consultar directo por su número`;
     t += '.';
     if (p.conocidas.length) t += ` ${p.conocidas.length} guía(s) ya están en el tablero: no se volverán a descargar.`;
     if (p.ignoradas) t += ` Se ignoran ${p.ignoradas} búsqueda(s) con datos no válidos.`;
@@ -554,6 +560,7 @@
       maxReintentos: entero(op.maxReintentos, 'Reintentos', 0, 10, D.maxReintentos),
       timeoutMs: entero(op.timeoutMs, 'Tiempo máximo por solicitud', 5000, 300000, D.timeoutMs),
       maxErroresConsecutivos: entero(op.maxErroresConsecutivos, 'Errores seguidos permitidos', 1, 1000, D.maxErroresConsecutivos),
+      maxNoExistenSerie: entero(op.maxNoExistenSerie, 'Números seguidos que no existen', 1, 1000, D.maxNoExistenSerie),
       esperaConexionMin: entero(op.esperaConexionMin, 'Minutos de espera de conexión', 1, 240, D.esperaConexionMin),
       descargarJSON: siNo(op.descargarJSON, D.descargarJSON),
       descargarExcel: siNo(op.descargarExcel, D.descargarExcel),
@@ -899,6 +906,15 @@
         registrarError({ guia: etiqueta, clave, url, estadoHttp: 403, mensaje: 'Sin permiso', intento, accion: 'PROCESO DETENIDO' });
         throw new ErrorAutenticacion(403, url, 'SUNAT indica que la cuenta no tiene permiso para esta consulta (HTTP 403).');
       }
+      // Consulta por número: si SUNAT responde que la guía no existe, es una respuesta final, no una falla
+      if (opciones.directa && !resp.ok) {
+        const det = erroresDeCuerpo(cuerpo);
+        const textoNE = det.texto || det.principal || (/^\s*</.test(cuerpo) ? '' : cuerpo.slice(0, 300));
+        if (status === 404 || NO_EXISTE.test(`${det.texto} ${det.principal} ${textoNE}`)) {
+          ultimo = { ok: false, status, mensaje: textoNE || `HTTP ${status}`, detalles: det.detalles, codigos: det.codigos, intentos: intento, noExiste: true };
+          return ultimo;
+        }
+      }
       // 404: no encontrada → se anota y se sigue
       if (status === 404) {
         fallar(404, 'Guía no encontrada (HTTP 404)', intento, false);
@@ -1239,17 +1255,17 @@
       else if (problemas) log(`${b.etiqueta}: ${tarea.encontradas} guía(s); ${problemas} tramo(s) no se pudieron consultar.`, 'warn');
       else log(`${b.etiqueta}: ${tarea.encontradas} guía(s).`, tarea.encontradas ? 'ok' : 'debug');
     }
-    // Guías citadas en facturas: se consultan directo por su número, en la fase de detalle.
+    // Consultas directas por número (guías citadas o números de una serie): se hacen en la fase de detalle.
     for (const d of directas) {
       const tarea = {
         ...d, tipos: [d.codCpe], encontradas: 0, fallidas: 0, diasRechazados: [], tramosExcedidos: [],
         rechazo: '', vistas: new Set()
       };
       estado.tareas.push(tarea);
-      agregarEncontradas(tarea, [{ rucEmisor: d.rucEmisor, codCpe: d.codCpe, numSerie: d.serie, numCpe: d.numero, __directa: true }], encontradas);
+      agregarEncontradas(tarea, [{ rucEmisor: d.rucEmisor, codCpe: d.codCpe, numSerie: d.serie, numCpe: d.numero, __directa: true, __posterior: !!d.posterior }], encontradas);
       tarea.vistas = null;
     }
-    if (directas.length) log(`${directas.length} guía(s) citada(s) en facturas se consultarán directamente.`);
+    if (directas.length) log(`${directas.length} guía(s) se consultarán directo por su número.`);
     return encontradas;
   }
 
@@ -1360,6 +1376,9 @@
     if (P.pendientesReales) log(`Descargando el detalle de ${P.pendientesReales} guía(s)…`);
 
     let consecutivos = 0;
+    // Consultas por número: por serie, cuántos números posteriores a la última guía conocida no existen seguidos
+    const series = new Map();
+    const serieDe = (it) => `${it.rucEmisor}|${it.codCpe}|${it.numSerie}`;
     for (const { clave, item } of estado.unicos) {
       if (signal.aborted) throw crearAbortError();
       const reg = estado.resultados.get(clave);
@@ -1398,25 +1417,55 @@
         continue;
       }
 
+      // Serie que ya llegó a su último número emitido: los siguientes aún no existen
+      const sv = item.__directa ? series.get(serieDe(item)) : null;
+      if (item.__posterior && sv && sv.cerrada && Number(item.numCpe) > sv.ultimo) {
+        Object.assign(reg, {
+          procesada: true, origen: 'fin_de_serie', http: 'NO_CONSULTADA', noConsultada: true,
+          error: `No se consultó: los ${cfg.maxNoExistenSerie} números anteriores de la serie ${item.numSerie} no existen todavía`
+        });
+        P.omitidas++; P.procesadas++;
+        actualizarUI();
+        continue;
+      }
+
       await esperarTurno(ctx);
       const url = construirUrlDetalle(item);
-      const r = await pedirJSON(url, ctx, etiqueta, clave);
+      const r = await pedirJSON(url, ctx, etiqueta, clave, { directa: !!item.__directa });
       P.consultadas++;
       reg.procesada = true;
       reg.intentos = r.intentos;
       reg.http = r.status;
       reg.consultadoEn = fechaHoraLocal();
 
-      if (r.ok && esObjetoPlano(r.data)) {
+      const dijoNoExiste = r.ok && esObjetoPlano(r.data) && !pareceDetalle(r.data) && NO_EXISTE.test(JSON.stringify(r.data).slice(0, 2000));
+      if (r.ok && esObjetoPlano(r.data) && (!item.__directa || pareceDetalle(r.data))) {
         reg.ok = true;
         reg.detalle = r.data;
         P.ok++;
         consecutivos = 0;
+        if (item.__directa) series.set(serieDe(item), { racha: 0, ultimo: 0, cerrada: false });
         compararListadoDetalle(clave, item, r.data);
         log(`${P.procesadas + 1}/${P.total} ${etiqueta} OK (${obtenerBienes(r.data).length} bien(es))`, 'debug');
+      } else if (item.__directa && (r.noExiste || r.status === 404 || dijoNoExiste)) {
+        // La guía no existe: es una respuesta válida de SUNAT (número aún no emitido, guía física o de otro tipo)
+        reg.noExiste = true;
+        reg.error = 'La guía no existe en SUNAT (número aún no emitido, guía física o de otro tipo)';
+        P.noExisten = (P.noExisten || 0) + 1;
+        consecutivos = 0;
+        const s0 = series.get(serieDe(item)) || { racha: 0, ultimo: 0, cerrada: false };
+        if (item.__posterior) {
+          s0.racha++;
+          s0.ultimo = Math.max(s0.ultimo, Number(item.numCpe));
+          if (!s0.cerrada && s0.racha >= cfg.maxNoExistenSerie) {
+            s0.cerrada = true;
+            log(`Serie ${item.numSerie}: ${s0.racha} números seguidos no existen; se omiten los siguientes de esa serie.`, 'ok');
+          }
+        }
+        series.set(serieDe(item), s0);
+        log(`Guía ${etiqueta}: no existe.`, 'debug');
       } else {
-        reg.error = r.ok ? 'La respuesta no contiene el detalle de la guía'
-          : (item.__directa && r.status === 404 ? 'La guía citada en la factura no existe como GRE (puede ser física o de otro tipo)' : r.mensaje);
+        reg.error = r.ok ? 'La respuesta no contiene el detalle de la guía' : r.mensaje;
         if (r.ok) registrarError({ guia: etiqueta, clave, url, estadoHttp: r.status, mensaje: reg.error, intento: r.intentos, accion: 'OMITIDA' });
         P.error++;
         if (r.status !== 404) consecutivos++;
@@ -1497,7 +1546,7 @@
 
       if (cfg.origen === 'tablero') {
         const n = cfg.busquedas.filter((b) => b.tipo === 'listado').length, d = cfg.busquedas.length - n;
-        log(`Lista «${cfg.pedidoInfo.titulo}»: ${n} búsqueda(s)${d ? ` y ${d} guía(s) citada(s) en facturas` : ''}.`);
+        log(`Lista «${cfg.pedidoInfo.titulo}»: ${n} búsqueda(s)${d ? ` y ${d} guía(s) por consultar directo por su número` : ''}.`);
       } else {
         const listaPeriodos = cfg.periodos.map((p) => `${dmy(p.desde)} al ${dmy(p.hasta)}`).join('; ');
         log(`Búsqueda manual: ${cfg.rucs.length} RUC como ${TEXTO_ROL[cfg.rol]}, guías de ${cfg.tipos.map((t) => TIPOS_GRE[t].toLowerCase()).join(', ')}; periodo(s): ${listaPeriodos}.`);
@@ -1624,9 +1673,9 @@
     }
     for (const d of estado.duplicados) agregarControl(C, 'GUIA_REPETIDA_EN_BUSQUEDA', d, 'clave', d, '', 'Registro duplicado eliminado');
     for (const r of estado.resultados.values()) {
-      if (r.origen === 'conocida') continue;
+      if (r.origen === 'conocida' || r.noConsultada) continue;
       if (!r.procesada) agregarControl(C, 'GUIA_NO_PROCESADA', r.clave, '', '', '', `Proceso finalizado como ${textoMotivo(estado.motivoFin)}`);
-      else if (!r.ok) agregarControl(C, r.directa ? 'GUIA_CITADA_NO_ENCONTRADA' : 'GUIA_SIN_DETALLE', r.clave, 'HTTP', '', r.http, r.error);
+      else if (!r.ok) agregarControl(C, r.noExiste ? 'GUIA_NO_EXISTE' : r.directa ? 'GUIA_CITADA_SIN_DETALLE' : 'GUIA_SIN_DETALLE', r.clave, 'HTTP', '', r.http, r.error);
       else if (obtenerBienes(r.detalle).length === 0) agregarControl(C, 'GUIA_SIN_BIENES', r.clave, 'traslado.bien', '', '0', 'La guía no tiene bienes');
       if (r.origen === 'previo_fuera_del_listado') agregarControl(C, 'PREVIO_FUERA_DEL_LISTADO', r.clave, '', '', '', 'Guía del archivo anterior que no aparece en las búsquedas actuales');
     }
@@ -1660,7 +1709,9 @@
       'Días o tramos que SUNAT no permitió consultar': estado.tareas.reduce((s, t) => s + t.diasRechazados.length + t.tramosExcedidos.length, 0),
       'Guías con detalle': ok.length,
       '  de ellas reutilizadas': regs.filter((r) => r.ok && r.origen !== 'actual').length,
-      'Guías con error': regs.filter((r) => r.procesada && !r.ok && r.origen !== 'conocida').length,
+      'Guías con error': regs.filter((r) => r.procesada && !r.ok && r.origen !== 'conocida' && !r.noExiste && !r.noConsultada).length,
+      'Guías que no existen (consulta por número)': regs.filter((r) => r.noExiste).length,
+      'Números no consultados (fin de la serie)': regs.filter((r) => r.noConsultada).length,
       'Guías no procesadas': regs.filter((r) => !r.procesada).length,
       'Total de bienes': ok.reduce((s, r) => s + obtenerBienes(r.detalle).length, 0),
       'Guías sin bienes': ok.filter((r) => obtenerBienes(r.detalle).length === 0).length,
@@ -1679,7 +1730,7 @@
         const c = conteo.get(o.etiqueta);
         if (r.ok) c.ok++;
         else if (r.origen === 'conocida') c.tablero++;
-        else if (r.procesada) c.error++;
+        else if (r.procesada && !r.noExiste && !r.noConsultada) c.error++;
       }
     }
     return estado.tareas.map((t) => {
@@ -1848,6 +1899,8 @@
   function textoConsulta(reg) {
     if (reg.ok) return 'SI';
     if (reg.origen === 'conocida') return 'YA_EN_TABLERO';
+    if (reg.noExiste) return 'NO_EXISTE';
+    if (reg.noConsultada) return 'NO_CONSULTADA_FIN_DE_SERIE';
     return reg.procesada ? 'NO' : 'NO_PROCESADA';
   }
 
@@ -1915,7 +1968,7 @@
       'Fecha registro': texto(buscarClave(aud, [/fec.*reg/i])),
       'Usuario modificación': texto(buscarClave(aud, [/usu.*mod/i])),
       'Fecha modificación': texto(buscarClave(aud, [/fec.*mod/i])),
-      'Origen': reg.directa ? 'citada en factura' : reg.origen,
+      'Origen': reg.directa ? 'consulta por número' : reg.origen,
       'Consulta correcta': textoConsulta(reg),
       'HTTP': texto(reg.http),
       'Intentos': texto(reg.intentos),
@@ -2101,7 +2154,8 @@
     const cfg = estado.config;
     const guias = [...estado.resultados.values()].map((r) => ({
       clave: r.clave,
-      estado: r.ok ? 'con_detalle' : r.origen === 'conocida' ? 'ya_en_tablero' : r.procesada ? 'sin_detalle' : 'no_procesada',
+      estado: r.ok ? 'con_detalle' : r.origen === 'conocida' ? 'ya_en_tablero' : r.noExiste ? 'no_existe' : r.noConsultada ? 'no_consultada'
+        : r.procesada ? 'sin_detalle' : 'no_procesada',
       citadaEnFactura: !!r.directa || (estado.origenes.get(r.clave) || []).some((o) => o.citada), // también si la halló una búsqueda
       listado: r.directa || !r.listado ? null : r.listado,
       detalle: r.ok ? r.detalle : null,

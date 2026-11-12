@@ -46,7 +46,7 @@ Suma: ya movió maquinaria a la ZTC (4); guía a la ZTC dada de baja (3); domici
 ### Cola de búsqueda
 
 1. **Guías de remitente que cita un transportista hacia la ZTC**: la guía de transportista de la ZTE a la ZTC que no detalla la carga cita la guía del remitente; si esa no está descargada, se consulta directo por su número (primero las del importador, luego las de más peso). Las guías físicas (series 0001…) no están en el sistema de guías electrónicas y solo se cuentan.
-2. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, desde 60 antes de la primera conocida hasta 40 después de la última.
+2. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, desde 60 antes de la primera conocida hasta 40 después de la última. Los 40 posteriores van marcados: pueden no existir todavía, y el extractor deja de probar la serie cuando 10 seguidos no existen. Un hueco que SUNAT ya confirmó que no existe no se vuelve a pedir.
 3. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
 4. **Tenedores con más riesgo** sin guías consultadas desde la compra.
 5. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.

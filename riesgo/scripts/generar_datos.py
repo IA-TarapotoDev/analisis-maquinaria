@@ -786,7 +786,7 @@ def leer_guias(rutas, r_ubi):
                   for n, b in enumerate(t.pop("bien", None) or [], 1) if isinstance(b, dict)]
         campos = campos_excel if campos_excel else plano({**{k: v for k, v in de.items() if k not in SIN_VER and k != "traslado"}, "traslado": t})
         return {"c": campos[:400], "b": bienes}
-    por, meta = {}, {"archivos": [], "busquedas": {}, "cobertura": {}}
+    por, meta = {}, {"archivos": [], "busquedas": {}, "cobertura": {}, "no_existen": set()}
     es_iso = lambda x: bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", x))
     for ruta in rutas:
         if ruta.lower().endswith((".xlsx", ".xlsm")):
@@ -832,6 +832,11 @@ def leer_guias(rutas, r_ubi):
                 continue
             casos = {str(b.get("caso")).strip() for b in g.get("busquedas") or [] if b.get("caso")}
             de = g.get("detalle") or {}
+            if not de and not g.get("listado"):
+                # Consulta por número sin respuesta útil: no es una guía. Si SUNAT dijo que no existe, el número se anota.
+                if g.get("estado") == "no_existe" or (g.get("estado") == "sin_detalle" and re.search(r"no existe", str(g.get("error") or ""), re.I)):
+                    meta["no_existen"].add(clave)
+                continue
             if clave in por and (por[clave]["_det"] or not de):
                 por[clave]["casos"] |= casos
                 continue
@@ -867,6 +872,7 @@ def leer_guias(rutas, r_ubi):
                 "peso": f"{peso:g} {t.get('codUnidadMedidaPb') or ''}".strip() if isinstance(peso, (int, float)) else "",
                 "casos": casos, "_det": bool(de), **({"ver": ver_guia(de, g.get("ver_c"))} if de else {})}
     guias = sorted(por.values(), key=lambda g: (g["f"], g["clave"]))
+    meta["no_existen"] -= set(por)                   # si otra descarga la trajo, sí existe
     for g in guias:
         for c in g["casos"]:
             if c in meta["busquedas"]:
@@ -2328,13 +2334,14 @@ def main(a):
             return 0.0
         return v_ if "TNE" in p_ else v_ / 1000 if "KGM" in p_ else 0.0
     claves_g = {g["clave"] for g in guias}
+    no_ex = (gre_meta or {}).get("no_existen") or set()   # números que SUNAT confirmó que no existen
     citadas, fisicas, vistas_c = [], 0, set()
     for g in guias:
         if g["tipo"] != "Transportista" or not g["vig"] or g["bienes"] or not (g["p"]["zona"] == "ZTE" and g["l"]["zona"] == "ZTC"):
             continue
         for d_ in g["docs"]:
             c_ = f"{d_.get('ruc')}-09-{d_.get('num')}"
-            if d_.get("t") != "09" or c_ in claves_g or c_ in vistas_c or not ruc_valido(str(d_.get("ruc") or "")):
+            if d_.get("t") != "09" or c_ in claves_g or c_ in no_ex or c_ in vistas_c or not ruc_valido(str(d_.get("ruc") or "")):
                 continue
             vistas_c.add(c_)
             if not re.fullmatch(r"[A-Z][A-Z0-9]{3}-\d+", str(d_.get("num") or "")):
@@ -2358,13 +2365,22 @@ def main(a):
     for g in guias:
         if g["em"]["ruc"] == ruc_imp and re.fullmatch(r"TP\d{2}-\d+", g["num"]):
             tp.setdefault(g["num"].split("-")[0], set()).add(int(g["num"].split("-")[1]))
-    faltan_tp = [(sr, n_) for sr, nums in sorted(tp.items()) for n_ in range(max(1, min(nums) - 60), max(nums) + 41) if n_ not in nums]
+    faltan_tp = []
+    for sr, nums in sorted(tp.items()):
+        hi = max(nums)
+        for n_ in range(max(1, min(nums) - 60), hi + 41):
+            if n_ in nums or (n_ < hi and f"{ruc_imp}-09-{sr}-{n_}" in no_ex):
+                continue                                 # ya descargada, o hueco que SUNAT confirmó que no existe
+            faltan_tp.append((sr, n_, n_ > hi))          # posterior a la última conocida: puede no existir todavía
     if tp:
         cola.append({"id": "tp", "t": "Guías de máquinas del importador que faltan", "n": len(faltan_tp), "u": "guías por consultar",
                      "por": "Cada guía de las series " + ", ".join(sorted(tp)) + " trae la serie de la máquina, el comprador y el lugar de entrega. "
-                            f"Hay {sum(len(v) for v in tp.values())} descargadas; con las que faltan se sabe quién tiene cada máquina.",
-                     "busquedas": [{"etiqueta": f"Guía de máquinas {sr}-{n_}", "grupo": "importador", "directa": {"rucEmisor": ruc_imp, "codCpe": "09", "serie": sr, "numero": str(n_)}}
-                                   for sr, n_ in faltan_tp]})
+                            f"Hay {sum(len(v) for v in tp.values())} descargadas; con las que faltan se sabe quién tiene cada máquina. "
+                            "Los números posteriores a la última guía conocida pueden no existir todavía: el extractor deja de probar una serie "
+                            "cuando 10 seguidos no existen.",
+                     "busquedas": [{"etiqueta": f"Guía de máquinas {sr}-{n_}", "grupo": "importador",
+                                    "directa": {"rucEmisor": ruc_imp, "codCpe": "09", "serie": sr, "numero": str(n_), **({"posterior": True} if post_ else {})}}
+                                   for sr, n_, post_ in faltan_tp]})
     # 2. Seguir las máquinas que ya salieron: guías posteriores de quien la tiene y de quien la recibió
     seg, vistos = [], set()
     for x in salidas:

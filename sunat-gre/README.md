@@ -32,6 +32,12 @@ En la ficha de cada caso del tablero, **«Buscar guías»** copia la lista de es
 
 Una guía en la que el comprador aparece como **remitente** después de la compra puede indicar que volvió a trasladar la máquina.
 
+## Consultas por número
+
+Algunas listas del tablero piden guías directo por su número: las citadas en una factura, las que cita un transportista y las guías de máquinas del importador que faltan (series TP). Si SUNAT responde que la guía no existe (con cualquier código: 404, 400, 422, 500 o un mensaje de error), el extractor lo anota como **«no existe»** y sigue: no lo reintenta ni lo cuenta como error, así que no detiene la descarga. La detención tras 8 errores seguidos queda solo para las fallas reales de conexión o de SUNAT.
+
+El tablero marca los números posteriores a la última guía conocida de cada serie, que pueden no existir todavía. Cuando **10 seguidos** de esos números no existen, el extractor da la serie por terminada y no consulta los siguientes («no consultada: fin de la serie»). Los huecos entre guías conocidas se consultan siempre. En el JSON, esas guías salen con `estado` `no_existe` o `no_consultada`; el tablero no vuelve a pedir un hueco que SUNAT confirmó que no existe.
+
 ## Búsqueda manual
 
 En el panel, **«Búsqueda manual»**: escriba uno o varios RUC, elija si el RUC es emisor, receptor o ambos, los tipos de guía y uno o más periodos. Si antes pulsa «Conectar» y hace una búsqueda en la pantalla de SUNAT, sus datos se copian solos al panel.
@@ -49,7 +55,7 @@ SUNAT entrega como máximo 100 guías por consulta (código 2021). El extractor:
 
 | Archivo | Para qué | Contenido |
 |---|---|---|
-| JSON | Tablero | Una entrada por guía: `clave`, `estado` (`con_detalle`, `ya_en_tablero`, `sin_detalle`, `no_procesada`), `citadaEnFactura`, fila del listado (estado actual en SUNAT), `detalle` completo y las búsquedas (y casos) que la encontraron. También las consultas hechas, los errores y el control de calidad. Nunca incluye la conexión. |
+| JSON | Tablero | Una entrada por guía: `clave`, `estado` (`con_detalle`, `ya_en_tablero`, `no_existe`, `no_consultada`, `sin_detalle`, `no_procesada`), `citadaEnFactura`, fila del listado (estado actual en SUNAT), `detalle` completo y las búsquedas (y casos) que la encontraron. También las consultas hechas, los errores y el control de calidad. Nunca incluye la conexión. |
 | Excel | Revisión | Resumen (con una fila por búsqueda), Guías (una fila por guía, con todos los campos del detalle), Bienes (una fila por bien), listas anidadas en hojas aparte, Búsquedas, Errores y Control. Los textos conservan los ceros a la izquierda. |
 | CSV | Opcional | Los mismos datos en CSV (UTF-8 con BOM, separador «;»): **Más opciones > ⬇ CSV**. |
 
@@ -66,6 +72,7 @@ Las guías anuladas o con baja también se descargan, con su estado.
 | HTTP 403 | La cuenta no tiene permiso para esa consulta: el proceso se detiene. |
 | El navegador bloquea las descargas | Permita las descargas múltiples para el sitio, o use **⬇ Excel** / **⬇ JSON** del panel. |
 | Se detuvo a mitad | Pulse otra vez «Buscar y descargar»: solo consulta lo que falta. |
+| Muchas guías «no existe» en una consulta por número | Es normal al final de cada serie: son números que aún no se emiten. No detienen la descarga (desde la versión 3.1.0). |
 
 ## Seguridad
 
