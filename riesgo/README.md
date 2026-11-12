@@ -35,6 +35,8 @@ Cada guía con partida en la ZTE y llegada en la ZTC cuyos bienes nombran una m�
 | Sin solicitud de traslado | El cuaderno de traslados (por DAM y serie). Si la máquina partió de otra circunscripción, queda por confirmar en esa intendencia |
 | Guía vigente a la ZTC | Guía emitida y no dada de baja. Si solo hay guías dadas de baja, el expediente queda como indicio |
 
+Cada máquina conserva su número de expediente (S01, S02…) de una versión a otra si el generador recibe el JSON de la versión anterior con `--salidas-previas`: se reconoce por su serie o, si no la tiene, por sus guías. Las salidas nuevas toman el número siguiente.
+
 Estados: **Caso armado** (las cinco pruebas: falta ubicar y verificar la máquina), **Indicio: guía dada de baja**, **Por completar** (dice qué falta y dónde conseguirlo), **Regresó a la ZTE** (una guía posterior la trae de vuelta) y **Descartada** (con solicitud de traslado, sin beneficio o con más de 4 años). La última ubicación es la llegada de la guía más reciente que nombra la máquina; si las guías posteriores del tenedor ya se consultaron y ninguna la nombra, el expediente lo dice.
 
 ### Tenedores: puntaje de riesgo
@@ -128,7 +130,8 @@ python3 -I riesgo/scripts/generar_datos.py DAMs.csv CPEs_EMITIDOS.txt CPE_DETALL
   --domicilios /ruta/privada/domicilios.csv --consulta-ruc lote1.zip lote2.zip \
   --facturas-xml /ruta/privada/xml --control-ia /ruta/privada/control.xlsm \
   --trazabilidad /ruta/privada/casos.csv --portal URL_DEL_PORTAL_DEL_EMISOR \
-  --transportistas /ruta/privada/transportistas.txt --guias /ruta/privada/gre_*.json
+  --transportistas /ruta/privada/transportistas.txt --guias /ruta/privada/gre_*.json \
+  --salidas-previas /ruta/privada/datos_anterior.json
 
 # 2. JSON → página cifrada (la clave se lee de un archivo privado, no del repositorio)
 CLAVE_TABLERO_ARCHIVO=/ruta/privada/clave.txt \
@@ -139,7 +142,7 @@ CLAVE_TABLERO_ARCHIVO=/ruta/privada/clave.txt \
 
 ### Excel de consultas
 
-La primera hoja, **«Salidas por verificar»**, lista las máquinas que una guía lleva a la ZTC y que no se descartan solas. El equipo busca la serie en el sistema y anota: la serie (si la guía no la trae), la DAM, su año o fecha, el importador, si tiene el beneficio, si tiene solicitud de traslado, el expediente y la ubicación verificada. Con «Sí» en beneficio, «No» en traslado y 4 años o menos, el expediente pasa a caso armado. Cada fila se identifica por la clave de su guía principal, así que lo completado se conserva con `--previo`.
+La primera hoja, **«Salidas por verificar»**, lista las máquinas que una guía lleva a la ZTC y que no se descartan solas. El equipo busca la serie en el sistema y anota: la serie (si la guía no la trae), la DAM, su año o fecha, el importador, si tiene el beneficio, si tiene solicitud de traslado, el expediente y la ubicación verificada. Con «Sí» en beneficio, «No» en traslado y 4 años o menos, el expediente pasa a caso armado. Cada fila se identifica por la clave de su guía principal y la serie de la máquina (una guía puede llevar varias máquinas), así que lo completado se conserva con `--previo`.
 
 Las otras hojas vienen de que el cuaderno de la IA Tarapoto solo cubre las DAM con destino Tarapoto. `consultas_xlsx.py` reúne en el mismo Excel lo demás que conviene consultar en el sistema: las DAM con maquinaria y destino en otra intendencia (modalidad de pago o garantía, estado de la solicitud, diligencia, RI, NCN y traslado), las series vendidas que no están en las DAM del periodo y el PIN de cada serie de las DAM anteriores al periodo que tienen traslados de maquinaria. Las celdas grises vienen del tablero y las amarillas se completan.
 

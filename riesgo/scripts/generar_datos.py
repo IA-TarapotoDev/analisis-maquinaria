@@ -93,7 +93,7 @@ def cat_maquina(desc):
     d = norm(desc)
     reglas = [
         ("RETROEXCAVADORA", "Retroexcavadora"), ("EXCAVADORA", "Excavadora"),
-        ("MINICARGADOR", "Minicargador"), ("CARGADOR", "Cargador frontal"),
+        ("MINICARGADOR", "Minicargador"), ("MINI CARGADOR", "Minicargador"), ("MINI-CARGADOR", "Minicargador"), ("CARGADOR", "Cargador frontal"),
         ("MOTONIVELADORA", "Motoniveladora"), ("RODILLO", "Rodillo compactador"),
         ("TRACTOR AGRIC", "Tractor agrícola"), ("TRACTOR", "Tractor de orugas"),
         ("GRUPO ELECTROGENO", "Grupo electrógeno"), ("MOTOR MARINO", "Motor marino"), ("MOTOR", "Motor diésel"),
@@ -140,6 +140,11 @@ def leer_dams(ruta):
     m["hs4"] = m.NUM_PARTNANDI.str[:4]
     m["cif_u"] = m.MTO_VALORADU / m.CNT_COMER
     m["conv"] = (m.COD_TIPCONVENIO.fillna("").str.strip() + "-" + m.COD_CONVENIO.fillna("").str.strip()).replace("-", "Sin beneficio")
+    # Una serie viene en varias filas cuando tiene más de un convenio o más de un participante: queda una sola, con todos sus convenios
+    ks = ["dam", "NUM_SECSERIE"]
+    convs = m.groupby(ks).conv.agg(lambda c: ", ".join(sorted(set(c) - {"Sin beneficio"})) or "Sin beneficio")
+    m = m.drop_duplicates(ks).copy()
+    m["conv"] = [convs[(d_, s_)] for d_, s_ in zip(m.dam, m.NUM_SECSERIE)]
     m["maq"] = m.hs4.isin(HS_MAQ) | (m.cif_u >= 15000)
     m["dest"] = m.COD_ADUDEST.fillna("").str.strip()
     return m
@@ -512,12 +517,13 @@ def leer_consultas(ruta):
         return m_[1] if m_ else t_
     for r in filas("Salidas por verificar"):
         clave = txt(r.get("Guía principal (clave)"))
+        serie_g = re.sub(r"[^A-Z0-9]", "", norm(txt(r.get("Serie de la máquina (guía)"))))
         campos = {"serie": re.sub(r"[^A-Z0-9]", "", norm(txt(r.get("Serie (si la guía no la trae)")))), "dam": (claves_dam(r.get("DAM")) or [txt(r.get("DAM"))])[0],
                   "serie_dam": txt(r.get("Serie de la DAM")).split(".")[0], "f_dam": anio_o_fecha(r.get("Año o fecha de la DAM")), "imp": txt(r.get("Importador")),
                   "benef": txt(r.get("¿Con beneficio?")), "tras": txt(r.get("¿Tiene solicitud de traslado?")), "exp": txt(r.get("Expediente de traslado")),
                   "ubic": txt(r.get("Ubicación verificada (dirección y fecha)")), "obs": txt(r.get("Observaciones"))}
         if clave and any(campos.values()):
-            out["salidas"][clave] = campos
+            out["salidas"][f"{clave}|{serie_g}"] = campos
     for r in filas("DAM 2024 de traslados"):
         exp_ = txt(r.get("Traslado"))
         out["pin_filas"][exp_] += 1
@@ -968,7 +974,7 @@ def main(a):
     # ---------- DAM y máquinas importadas ----------
     dec = m.groupby("dam").agg(f=("f", "first"), ad=("COD_ADUANA", "first"), dest=("dest", "first"), canal=("CANAL", "first"),
                                series=("NUM_SECSERIE", "size"), cif=("MTO_VALORADU", "sum"), nmaq=("maq", "sum"),
-                               conv=("conv", lambda s: ", ".join(sorted(set(s))))).reset_index()
+                               conv=("conv", lambda s: ", ".join(sorted({c for x in s for c in x.split(", ")})))).reset_index()
     mq = datos_maquina(m[m.maq])
     mq["s"] = mq.NUM_SECSERIE.astype(int)
     mq = mq.sort_values(["f", "dam", "s"])
@@ -2068,8 +2074,11 @@ def main(a):
         vig = [i for i in gs_ if guias[i]["vig"]]
         base = vig or gs_
         g0 = guias[base[0]]
-        ver = cons.get("salidas", {}).get(g0["clave"]) or next((cons.get("salidas", {}).get(guias[i]["clave"]) for i in gs_ if guias[i]["clave"] in cons.get("salidas", {})), None) or {}
         serie = "" if k_.startswith("sin:") else k_
+        # Fila del Excel: por guía y serie; si no, la que se llenó cuando la guía aún no tenía serie
+        ver_ = cons.get("salidas", {})
+        ver = next((ver_[f"{c_}|{s_}"] for s_ in dict.fromkeys((serie, "")) for c_ in [g0["clave"]] + [guias[i]["clave"] for i in gs_]
+                    if f"{c_}|{s_}" in ver_), {})
         serie = serie or ver.get("serie", "")
         # Todas las guías que nombran la serie: para saber dónde quedó y si regresó
         todas = sorted(set(gs_) | ({i for i, t in enumerate(g_txt2) if serie in t} if len(serie) >= 6 else set()), key=lambda i: (guias[i]["f"], i))
@@ -2169,7 +2178,10 @@ def main(a):
                 pasos.append(f"Buscar en el sistema la DAM de la serie {serie} y anotarla en el Excel de consultas (hoja «Salidas por verificar»): DAM, fecha, importador y si tiene el beneficio.")
             if tras is None and dam["benef"] is not False:
                 pasos.append((tras_nota + ".") if tras_nota else "Confirmar en el cuaderno o en el sistema que la serie no tiene solicitud de traslado y anotarlo en el Excel.")
-            if not vig:
+            if not vig and ubic.get("zona") == "ZTE":
+                pasos.append(f"La guía a la ZTC se dio de baja y la última guía vigente deja la máquina en {ubic['lugar']} (ZTE): puede que no haya salido. "
+                             "Verificar si sigue ahí antes de requerir.")
+            if not vig and (seguir or not cubiertos):
                 pasos.append("La guía a la ZTC se dio de baja. Descargar las guías posteriores del comprador y del transportista para ver a dónde llegó la máquina.")
             pasos.append(f"Última ubicación conocida: {ubic['lugar']}" + (f" ({ubic['dir']})" if ubic["dir"] else "") + f", el {ftx(ubic['f'])} (hace {ubic['dias']} días), "
                          f"recibida por {(nom(ubic['rec']) if ubic['rec']['ruc'] or ubic['rec']['nombre'] else nom(ten)).rstrip('.')}.")
@@ -2203,8 +2215,34 @@ def main(a):
             "gs": sorted(set(gs_) | set(post), key=lambda i: (guias[i]["f"], i)), "ver": bool(ver), "obs": ver.get("obs", "")})
     ORDEN_S = {"Caso armado": 0, "Indicio: guía dada de baja": 1, "Por completar": 2, "Regresó a la ZTE": 3, "Descartada": 4}
     salidas.sort(key=lambda x: (ORDEN_S[x["estado"]], len(x["falta"]), [-ord(c) for c in x["f"]]))
-    for n_, x in enumerate(salidas, 1):
-        x["id"] = f"S{n_:02d}"
+    # Cada máquina conserva su número de expediente: se toma de la versión anterior (por serie o, sin serie, por sus guías)
+    prev_id = {}
+    if getattr(a, "salidas_previas", None):
+        try:
+            with open(a.salidas_previas, encoding="utf-8") as f_:
+                d_prev = json.load(f_)
+            g_prev = d_prev.get("guias", [])
+            for x in d_prev.get("salidas", []):
+                if x.get("maq", {}).get("serie"):
+                    prev_id.setdefault(("serie", canon(x["maq"]["serie"])), x["id"])
+                else:
+                    for i in x.get("gs", []):
+                        if i < len(g_prev):
+                            prev_id.setdefault(("guia", g_prev[i]["clave"], x["maq"]["cat"]), x["id"])
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            print(f"AVISO salidas previas: no se pudo leer {a.salidas_previas} ({e}); los expedientes se numeran de nuevo")
+    usados = set()
+    for x in salidas:
+        cands = [("serie", x["maq"]["serie"])] if x["maq"]["serie"] else []
+        cands += [("guia", guias[i]["clave"], x["maq"]["cat"]) for i in x["gs"]]
+        x["id"] = next((prev_id[c] for c in cands if c in prev_id and prev_id[c] not in usados), None)
+        if x["id"]:
+            usados.add(x["id"])
+    n_ = max([int(i[1:]) for i in set(prev_id.values()) if i[1:].isdigit()] or [0])
+    for x in salidas:
+        if not x["id"]:
+            n_ += 1
+            x["id"] = f"S{n_:02d}"
 
     # Patrón de cabecera: quién saca las máquinas
     vivas = [x for x in salidas if x["estado"] != "Descartada"]
@@ -2419,6 +2457,7 @@ if __name__ == "__main__":
     ap.add_argument("--trazabilidad", help="CSV de casos: cpe, serie_maquina, serie_motor, modelo, ubicacion_entrega (DISTRITO, PROVINCIA, DEPARTAMENTO), direccion_entrega, fuente, nota")
     ap.add_argument("--facturas-xml", nargs="*", default=[], help="XML de comprobantes del emisor (archivos, carpetas o ZIP)")
     ap.add_argument("--consultas", help="Libro de consultas a otras intendencias completado por el equipo (ver consultas_xlsx.py)")
+    ap.add_argument("--salidas-previas", help="JSON de datos de la versión anterior: cada máquina conserva su número de expediente (S01, S02…)")
     ap.add_argument("--control-ia", help="Cuaderno de control de la intendencia (xlsx/xlsm): control en destino, NCN, RI y traslados")
     ap.add_argument("--guias", nargs="*", default=[], help="JSON que descarga el extractor de GRE (uno o más; las guías repetidas se leen una sola vez)")
     ap.add_argument("--transportistas", help="Transportistas vigilados (TXT: un RUC por línea, opcionalmente con el nombre); entran en la «Lista del día» de guías")

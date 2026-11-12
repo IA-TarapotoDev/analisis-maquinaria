@@ -61,7 +61,7 @@ def previo_de(ruta):
     from openpyxl import load_workbook
     wb = load_workbook(ruta, data_only=True)
     claves = {HOJA_DAM: ("DAM",), HOJA_SERIES: ("Factura",), HOJA_2024: ("Traslado", "DAM", "Serie de la DAM"),
-              HOJA_SALIDAS: ("Guía principal (clave)",)}
+              HOJA_SALIDAS: ("Guía principal (clave)", "Serie de la máquina (guía)")}
     out = {}
     for hoja, campos in claves.items():
         if hoja not in wb.sheetnames:
@@ -242,7 +242,7 @@ def main(r_json, salida, r_previo=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Instrucciones"
-    hoja_tabla(wb, HOJA_SALIDAS, cols_x, filas_x, listas_x, previo=previo.get(HOJA_SALIDAS), clave=lambda r: (str(r[11]),))
+    hoja_tabla(wb, HOJA_SALIDAS, cols_x, filas_x, listas_x, previo=previo.get(HOJA_SALIDAS), clave=lambda r: (str(r[11]), str(r[4] or "")))
     hoja_tabla(wb, HOJA_DAM, cols_dam, filas, listas_dam, previo=previo.get(HOJA_DAM), clave=lambda r: (str(r[2]),))
     hoja_tabla(wb, HOJA_SERIES, cols_s, filas_s, listas_s, previo=previo.get(HOJA_SERIES), clave=lambda r: (str(r[1]),))
     wt = hoja_tabla(wb, HOJA_2024, cols_t, filas_t, None, formulas_t, previo=previo.get(HOJA_2024), clave=lambda r: (str(r[0]), str(r[3]), str(r[4])))
