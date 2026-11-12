@@ -2142,7 +2142,11 @@ def main(a):
             tras_nota = f"La máquina partió de la circunscripción de la {circ}: la DAM y la solicitud de traslado se confirman con esa intendencia"
         if ver:                             # lo que verificó el equipo manda sobre lo deducido
             if ver.get("dam") or ver.get("f_dam") or ver.get("imp"):
-                dam.update({"dam": ver.get("dam") or dam["dam"], "serie": ver.get("serie_dam") or dam["serie"], "f": ver.get("f_dam") or dam["f"],
+                v_dam = ver.get("dam") or ""
+                otra = bool(v_dam) and v_dam != dam["dam"]             # el equipo anotó otra DAM: la fecha del tablero no le corresponde
+                anio_v = (re.findall(r"^\d{3}-(\d{4})-\d{2}-\d+", v_dam) or [""])[0]    # el número de la DAM lleva el año
+                dam.update({"dam": v_dam or dam["dam"], "serie": ver.get("serie_dam") or dam["serie"],
+                            "f": ver.get("f_dam") or ("" if otra else dam["f"]) or anio_v,
                             "imp": ver.get("imp") or dam["imp"], "fuente": "Verificación del equipo"})
             if si_no(ver.get("benef", "")) is not None:
                 dam["benef"], dam["fuente"] = si_no(ver["benef"]), "Verificación del equipo"
@@ -2171,12 +2175,16 @@ def main(a):
         quienes = [(q, rol) for q, rol in quienes if ruc_valido(q["ruc"]) and q["ruc"] != ruc_imp]
         seguir = [{"ruc": q["ruc"], "nombre": q["nombre"], "rol": rol} for q, rol in quienes if cobertura(q["ruc"], g0["f"])[0] < 0.9]
         cubiertos = [(q, max((h_ for _, h_ in cobertura(q["ruc"], g0["f"])[1]), default="")) for q, rol in quienes if cobertura(q["ruc"], g0["f"])[0] >= 0.9]
-        if mov["ruc"] == ruc_imp and vig:   # envío del propio importador: la máquina está donde el comprador; lo que falta no es ubicarla
+        if mov["ruc"] == ruc_imp and vig and (dam["benef"] is not True or tras is True):
+            # envío del propio importador sin beneficio confirmado (o con traslado): lo que falta no es ubicar la máquina
             seguir, cubiertos = [], []
         # Estado del expediente
         falta, pasos = [], []
         if dam["benef"] is False:
-            estado, motivo = "Descartada", ("Sin beneficio: " + (dam["fuente"] or "importada sin el beneficio")).replace("DAM del importador: importada sin beneficio", "importada sin el beneficio")
+            fuente_ = dam["fuente"] or ""
+            estado, motivo = "Descartada", "Sin beneficio: " + ("la DAM no está acogida al beneficio (verificación del equipo)" if fuente_ == "Verificación del equipo"
+                                                               else "importada sin el beneficio" if not fuente_ or fuente_.startswith("DAM del importador")
+                                                               else fuente_[0].lower() + fuente_[1:])
         elif tras is True:
             estado, motivo = "Descartada", tras_nota
         elif plazo is False:

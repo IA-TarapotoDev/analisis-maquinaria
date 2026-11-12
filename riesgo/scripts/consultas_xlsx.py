@@ -272,8 +272,9 @@ def main(r_json, salida, r_previo=None):
         ("5. Devuelva el archivo completado por el chat del tablero, no por el repositorio. El tablero lo incorpora: la ficha de "
          "cada máquina mostrará el control de su DAM, y los casos se confirman o se descartan.", f()),
         ("6. Hoja «Salidas por verificar» (la primera): cada fila es una máquina que una guía lleva de la ZTE a la ZTC. Busque su serie en el "
-         "sistema y anote la DAM, el año o la fecha, el importador, si tiene el beneficio y si tiene solicitud de traslado. Con «Sí» en beneficio "
-         "y «No» en traslado, y 4 años o menos desde la importación, el expediente pasa a caso armado.", f()),
+         "sistema y anote la DAM, el importador, si tiene el beneficio y si tiene solicitud de traslado. El año se toma del número de la DAM "
+         "(118-2024-10-…): anote la fecha solo si la tiene. Con «Sí» en beneficio y «No» en traslado, y 4 años o menos desde la importación, "
+         "el expediente pasa a caso armado.", f()),
         ("", None),
         ("Leyenda", f(size=12, bold=True)),
     ]
