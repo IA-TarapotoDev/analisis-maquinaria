@@ -90,7 +90,7 @@ def norm(s):
 
 
 def cat_maquina(desc):
-    d = norm(desc)
+    d = re.sub(r"\bEXTRACTOR\w*", " ", norm(desc))      # «extractor» no es un tractor
     reglas = [
         ("RETROEXCAVADORA", "Retroexcavadora"), ("RETRO EXCAVADORA", "Retroexcavadora"), ("RETRO-EXCAVADORA", "Retroexcavadora"),
         ("EXCAVADORA", "Excavadora"),
@@ -708,7 +708,8 @@ def guias_xlsx(ruta):
 
 MAQ_GUIA = {"Excavadora", "Retroexcavadora", "Minicargador", "Cargador frontal", "Motoniveladora", "Rodillo compactador",
             "Tractor de orugas", "Tractor agrícola", "Grupo electrógeno", "Motor marino"}
-NO_ES_MAQ = re.compile(r"\b(1:50|1/50|ESCALA|JUGUETE\w*|MINIATURA\w*|ANFO|BATERIA\w*|CELULAR\w*|NEUMATICO\w*|LLANTA\w*|REPUESTO\w*)\b")
+NO_ES_MAQ = re.compile(r"\b(1:50|1/50|ESCALA|JUGUETE\w*|MINIATURA\w*|ANFO|BATERIA\w*|CELULAR\w*|NEUMATICO\w*|LLANTA\w*|REPUESTO\w*|"
+                       r"XAG|DRON\w*|CHARGER)\b")     # XAG: drones agrícolas (su «cargador» es de baterías)
 PREFIJO_BIEN = re.compile(r"^(\d+\s*(UND|UNIDAD(ES)?|U)?\.?\s+|TRANSPORTE( EN CAMA BAJA)? DE (UNA |UN )?|SERVICIO DE (TRASLADO|TRANSPORTE) DE (UNA |UN )?|"
                           r"TRASLADO DE (UNA |UN )?)+")
 SERIE_ROTULO = re.compile(r"(?:\bSERIAL|\bSERIE|\bS/N|\bPIN|\bVIN|\bCHASIS)\s*(?:DE\s+)?(?:LA\s+)?(?:MAQ(?:UINA|NA)?\.?)?\s*(?:NUMBER)?\s*[:#.\-*]*\s*([A-Z0-9][A-Z0-9\-]{4,19})")
