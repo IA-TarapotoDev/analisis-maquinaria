@@ -565,10 +565,11 @@ def leer_consultas(ruta):
     out["salidas"] = {}
 
     def anio_o_fecha(v):
-        """«2022», 2022 o una fecha completa → «2022» o «2022-05-17»."""
+        """«2022», 2022, «06/2022» (mes y año) o una fecha completa → «2022», «2022-06» o «2022-05-17»."""
         t_ = fch(v)
         m_ = re.fullmatch(r"(\d{4})(\.0)?", t_.strip())
-        return m_[1] if m_ else t_
+        m2 = re.fullmatch(r"(\d{1,2})[/-](\d{4})", t_.strip())
+        return m_[1] if m_ else f"{m2[2]}-{int(m2[1]):02d}" if m2 and 1 <= int(m2[1]) <= 12 else t_
     for r in filas("Salidas por verificar"):
         clave = txt(r.get("Guía principal (clave)"))
         serie_g = re.sub(r"[^A-Z0-9]", "", norm(txt(r.get("Serie de la máquina (guía)"))))
@@ -2244,6 +2245,8 @@ def main(a):
         """Antigüedad al salir. f_dam puede ser una fecha o solo el año."""
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", f_dam or ""):
             return round((pd.Timestamp(f_sal) - pd.Timestamp(f_dam)).days / 365.25, 1)
+        if re.fullmatch(r"\d{4}-\d{2}", f_dam or ""):           # solo mes y año: a mitad de mes
+            return round((pd.Timestamp(f_sal) - pd.Timestamp(f_dam + "-15")).days / 365.25, 1)
         if re.fullmatch(r"\d{4}", (f_dam or "")[:4]) and len(f_dam) <= 7:
             return float(int(f_sal[:4]) - int(f_dam[:4]))
         return None
@@ -2365,7 +2368,10 @@ def main(a):
                          "la serie o el enlace con la guía pueden estar mal. Revisarlo antes de seguir.")
             dam = {**dam, "benef": None, "fuente": "DAM posterior a la salida: revisar"}
             edad = None
-        plazo = None if edad is None else edad <= PLAZO
+        # Los 4 años se cuentan por año calendario: el de la DAM y los 3 siguientes (con DAM de 2022, la salida puede ser hasta 2025)
+        anio_dam = int(dam["f"][:4]) if edad is not None and re.fullmatch(r"\d{4}", (dam["f"] or "")[:4]) else None
+        plazo = None if anio_dam is None else int(g0["f"][:4]) - anio_dam < PLAZO
+        fuera_ = lambda a_: f"salió en {g0['f'][:4]}, pasados los {PLAZO} años ({a_} a {a_ + PLAZO - 1})"
         # Año de la máquina según la guía: su descripción o, si no lo dice, los bienes que nombran su serie
         fab_eq = int(ver["fab"]) if ver.get("fab") else None           # el año que anotó el equipo manda sobre el de la guía
         fab = fab_eq or anio_fabricacion([v["maq"]["desc"]], int(g0["f"][:4]) + 1) or (
@@ -2403,11 +2409,11 @@ def main(a):
         elif tras is True:
             estado, motivo = "Descartada", tras_nota
         elif plazo is False:
-            estado, motivo = "Descartada", f"Salió {edad:g} años después de la importación (más de {PLAZO})"
-        elif plazo is None and edad_fab is not None and edad_fab > PLAZO:
-            # Sin una DAM que diga cuándo se importó, solo se trabajan máquinas de hasta 4 años
+            estado, motivo = "Descartada", f"Máquina antigua: la DAM es de {anio_dam} y {fuera_(anio_dam)}"
+        elif plazo is None and edad_fab is not None and edad_fab >= PLAZO:
+            # Sin una DAM que diga cuándo se importó, cuenta el año de la máquina (el que anota el equipo o el de la guía)
             estado, motivo = "Descartada", ((f"Máquina antigua: según el equipo es del año {fab}" if fab_eq else f"Máquina antigua: la guía dice que es del año {fab}")
-                                            + f" ({edad_fab} años al salir, más de {PLAZO})")
+                                            + f" y {fuera_(fab)}")
         elif regreso is not None:
             estado, motivo = "Regresó a la ZTE", f"Volvió el {ftx(regreso['f'])} con la guía {regreso['num']} ({regreso['l']['lugar']})"
         else:
@@ -2525,7 +2531,7 @@ def main(a):
             "p": g0["p"]["lugar"], "l": g0["l"]["lugar"], "ubic": ubic, "regreso": {"f": regreso["f"], "guia": regreso["num"], "lugar": regreso["l"]["lugar"]} if regreso is not None else None,
             "dam": dam, "edad": edad, "fab": fab, **({"fab_eq": True} if fab_eq else {}), "tras": tras, "tras_nota": tras_nota, "cpe": cpe if cpe in casos_cpe else None, "venta": cpe or "",
             "exportada": c_["exp"] if exportada else "", "cliente": next((r for r in (ten["ruc"], mov["ruc"], rec["ruc"]) if r in cli), None),
-            "pruebas": {"serie": bool(serie) or None, "dam": dam["benef"], "plazo": plazo if plazo is not None else (False if (edad_fab or 0) > PLAZO else None), "tras": (not tras) if tras is not None else None, "salida": bool(vig)},
+            "pruebas": {"serie": bool(serie) or None, "dam": dam["benef"], "plazo": plazo if plazo is not None else (False if (edad_fab or 0) >= PLAZO else None), "tras": (not tras) if tras is not None else None, "salida": bool(vig)},
             "recs": recs, "seguir": seguir,
             "transp": [{"ruc": r, "nombre": n_} for r, n_ in transp.items()], "placas": sorted({pl_ for i in gs_ for pl_ in guias[i]["placas"]})[:6],
             "gs": sorted(set(gs_) | set(post), key=orden_g), "ver": bool(ver), "obs": ver.get("obs", ""),

@@ -286,9 +286,10 @@ def main(r_json, salida, r_previo=None):
          "no está acogida a la Ley 27037 (no desgravada, sin código liberatorio 4438 o sin solicitud): nunca se desgravó ni se devolvió el IGV, "
          "la máquina puede circular fuera de la ZTE y el expediente se descarta. El año se toma del número de la DAM "
          "(118-2024-10-…): anote la fecha solo si la tiene. Si la DAM está en el cuaderno de la IA Tarapoto, basta su número: el tablero completa "
-         "la fecha, el importador, el beneficio y si tiene solicitud de traslado. Con «Sí» en beneficio y «No» en traslado, y 4 años o menos "
-         "desde la importación, el expediente pasa a caso armado. Si conoce el año de la máquina (fabricación o modelo), anótelo en «Año de la "
-         "máquina»: sin DAM conocida, una máquina de más de 4 años al salir se descarta.", f()),
+         "la fecha, el importador, el beneficio y si tiene solicitud de traslado. Con «Sí» en beneficio y «No» en traslado, y la salida dentro "
+         "de los 4 años (por año calendario: el de la DAM y los 3 siguientes; con DAM de 2022, hasta 2025), el expediente pasa a caso armado. "
+         "La fecha de la DAM puede ser completa, mes y año (06/2022) o solo el año. Si conoce el año de la máquina (fabricación o modelo), "
+         "anótelo en «Año de la máquina»: sin DAM conocida, cuenta ese año, y pasados los 4 años la salida se descarta.", f()),
         ("", None),
         ("Leyenda", f(size=12, bold=True)),
     ]

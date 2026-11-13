@@ -1276,14 +1276,18 @@ function vistaResumen(sec) {
 const EST_SAL = { "Caso armado": "alerta", "Indicio: guía dada de baja": "pend", "Por completar": "pend", "Regresó a la ZTE": "", "Descartada": "ok" };
 const ORD_SAL = ["Caso armado", "Indicio: guía dada de baja", "Por completar", "Regresó a la ZTE", "Descartada"];
 const estSalH = x => `<span class="etq ${EST_SAL[x.estado] || ""}">${esc(x.estado)}</span>`;
-const PRUEBAS = [["serie", "Serie de la máquina"], ["dam", "DAM con beneficio"], ["plazo", "4 años o menos al salir"], ["tras", "Sin solicitud de traslado"], ["salida", "Guía vigente a la ZTC"]];
+const PRUEBAS = [["serie", "Serie de la máquina"], ["dam", "DAM con beneficio"], ["plazo", "Dentro de los 4 años"], ["tras", "Sin solicitud de traslado"], ["salida", "Guía vigente a la ZTC"]];
 const pruebaIc = v => v === true ? `<span class="pr si">✓</span>` : v === false ? `<span class="pr no">✕</span>` : `<span class="pr nd">?</span>`;
 const pruebasH = x => `<span class="prs">${PRUEBAS.map(([k, t]) => `<span title="${esc(t)}: ${x.pruebas[k] === true ? "sí" : x.pruebas[k] === false ? "no" : "falta"}">${pruebaIc(x.pruebas[k])}</span>`).join("")}</span>`;
 const quienH = q => q && (q.nombre || q.ruc) ? `${esc(q.nombre || q.ruc)}${q.nombre && q.ruc ? ` <span class="etq">${esc(q.ruc)}</span>` : ""}` : "s/d";
 const conTipos = bs => bs.map(b => b.directa ? b : { tipos: TIPOS_GRE, ...b });
-const EDADES = ["2 años o menos", "Más de 2 y hasta 4 años", "Más de 4 años", "Sin fecha de DAM", "Sin fecha de DAM; máquina de más de 4 años"];
+// Los 4 años se cuentan por año calendario: el de la DAM (o el de la máquina) y los 3 siguientes
+const EDADES = ["2 años o menos", "Más de 2 años, dentro de los 4", "Pasados los 4 años", "Sin fecha de DAM", "Sin fecha de DAM; máquina de más de 4 años"];
 const edadFab = x => x.fab ? +x.f.slice(0, 4) - x.fab : null;
-const edadT = x => x.edad == null ? (edadFab(x) > 4 ? EDADES[4] : EDADES[3]) : x.edad <= 2 ? EDADES[0] : x.edad <= 4 ? EDADES[1] : EDADES[2];
+const anioDam = x => /^\d{4}/.test((x.dam || {}).f || "") ? +x.dam.f.slice(0, 4) : null;
+const fueraPlazo = x => anioDam(x) != null && +x.f.slice(0, 4) - anioDam(x) >= 4;
+const edadT = x => x.edad == null ? (edadFab(x) >= 4 ? EDADES[4] : EDADES[3]) : fueraPlazo(x) ? EDADES[2] : x.edad <= 2 ? EDADES[0] : EDADES[1];
+const fechaDam = f => !f ? "" : f.length === 10 ? fecha(f) : f.length === 7 ? `${f.slice(5, 7)}/${f.slice(0, 4)}` : f;   // fecha, mes/año o año
 
 function pedidoRuc(ruc, nombre, desde, grupo, hasta) {
   hasta = hasta || "hoy";
@@ -1306,7 +1310,7 @@ function textoRequerimiento(x) {
     ``,
     `Destinatario: ${x.ten.nombre || ""}${x.ten.ruc ? " (RUC " + x.ten.ruc + ")" : ""}`,
     `Máquina: ${m.cat}${m.serie ? ", serie " + m.serie : ""}. Descripción en la guía: ${m.desc}`,
-    d.dam ? `Importación: DAM ${d.dam}${d.serie ? " serie " + d.serie : ""}${d.f ? " (" + (d.f.length > 4 ? fecha(d.f) : d.f) + ")" : ""}${d.benef ? ", con el beneficio de la Amazonía" : ""}.` : (d.f ? `Importación: DAM de ${d.f}${d.benef ? ", con el beneficio de la Amazonía" : ""} (número por anotar).` : `Importación: DAM por identificar.`),
+    d.dam ? `Importación: DAM ${d.dam}${d.serie ? " serie " + d.serie : ""}${d.f ? " (" + fechaDam(d.f) + ")" : ""}${d.benef ? ", con el beneficio de la Amazonía" : ""}.` : (d.f ? `Importación: DAM de ${fechaDam(d.f)}${d.benef ? ", con el beneficio de la Amazonía" : ""} (número por anotar).` : `Importación: DAM por identificar.`),
     `Hecho: la guía de remisión ${g.num || ""} del ${fecha(x.f)}, emitida por ${(g.em || {}).nombre || ""}${(g.em || {}).ruc ? " (RUC " + g.em.ruc + ")" : ""}, ` +
       `traslada la máquina de ${x.p} a ${x.l}${g.l && g.l.dir ? " (" + g.l.dir + ")" : ""}.` + (x.tras === false ? ` No registra solicitud de traslado.` : ""),
     ``,
@@ -1328,13 +1332,14 @@ function fichaSalida(x) {
   const b = el("div", { class: "bloques dos" }); f.append(b);
   const det = {
     serie: x.maq.serie ? `Serie ${copiable(x.maq.serie)}` : "La guía no indica la serie",
-    dam: d.dam || d.f ? `${d.dam ? "DAM " + copiable(d.dam) + (d.serie ? " serie " + esc(d.serie) : "") : "DAM de " + esc(d.f) + " (falta el número)"}${d.f && d.dam ? " · " + (d.f.length > 4 ? fecha(d.f) : esc(d.f)) : ""}` +
+    dam: d.dam || d.f ? `${d.dam ? "DAM " + copiable(d.dam) + (d.serie ? " serie " + esc(d.serie) : "") : "DAM de " + esc(fechaDam(d.f)) + " (falta el número)"}${d.f && d.dam ? " · " + esc(fechaDam(d.f)) : ""}` +
       `${d.imp ? " · " + esc(d.imp) : ""}${d.benef === true ? " · con beneficio" : d.benef === false ? " · sin beneficio" : ""}${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}`
       : d.benef === false ? `Sin beneficio: no acogida a la Ley 27037, puede circular fuera de la ZTE (no se anotó el número de la DAM)${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}`
       : d.benef === true ? `Con beneficio (falta el número de la DAM)${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}`
       : "Aún no se conoce la DAM de esta máquina",
-    plazo: x.edad == null ? "Falta la fecha de la DAM" + (x.fab ? `. ${x.fab_eq ? "Según el equipo, la máquina" : "La guía dice que la máquina"} es del año ${esc(x.fab)}` + (edadFab(x) > 0 ? `: tenía ${f0(edadFab(x))} ${edadFab(x) === 1 ? "año" : "años"} al salir` : ", el mismo de la salida") : "") : d.f && d.f.length === 4 ? `Importada en ${esc(d.f)}; salió en ${esc(x.f.slice(0, 4))}`
-      : `Salió ${NF1.format(x.edad)} ${x.edad === 1 ? "año" : "años"} después de la importación`,
+    plazo: x.edad == null ? "Falta la fecha de la DAM" + (x.fab ? `. ${x.fab_eq ? "Según el equipo, la máquina" : "La guía dice que la máquina"} es del año ${esc(x.fab)}` + (edadFab(x) > 0 ? `: tenía ${f0(edadFab(x))} ${edadFab(x) === 1 ? "año" : "años"} al salir` : ", el mismo de la salida") : "") : (d.f && d.f.length <= 7 ? `Importada en ${esc(fechaDam(d.f))}; salió en ${esc(x.f.slice(0, 4))}`
+        : `Salió ${NF1.format(x.edad)} ${x.edad === 1 ? "año" : "años"} después de la importación`)
+        + (anioDam(x) != null ? `. Los 4 años van de ${anioDam(x)} a ${anioDam(x) + 3}${fueraPlazo(x) ? ": salió después" : ""}` : ""),
     tras: esc(x.tras_nota || (x.tras == null ? "Sin confirmar" : "")),
     salida: x.evid === "vigente" ? `Guía vigente de ${esc(x.p)} a ${esc(x.l)} el ${fecha(x.f)}` : "La guía a la ZTC se dio de baja: falta confirmar a dónde llegó la máquina",
   };
@@ -1370,7 +1375,7 @@ function vistaSalidas(sec) {
   const S = D.kpi.salidas || {}, n = e => S[e] || 0;
   sec.append(el("h2", {}, "Salidas detectadas"),
     el("p", { class: "nota" }, "Cada fila es una máquina que una guía de remisión lleva de la ZTE a la ZTC, sea del importador, del comprador o de un tercero. " +
-      "El expediente junta las pruebas: serie, DAM con beneficio, 4 años o menos, sin solicitud de traslado y guía vigente. Lo que el tablero no puede saber se completa en el Excel de consultas, hoja «Salidas por verificar». " +
+      "El expediente junta las pruebas: serie, DAM con beneficio, salida dentro de los 4 años (el año de la DAM y los 3 siguientes), sin solicitud de traslado y guía vigente. Lo que el tablero no puede saber se completa en el Excel de consultas, hoja «Salidas por verificar». " +
       "Sin beneficio (no acogida, no desgravada, sin código liberatorio 4438 o sin solicitud) quiere decir que nunca se desgravó ni se devolvió el IGV de la Ley 27037: la máquina puede circular fuera de la ZTE y la salida se descarta."));
   const ks = el("div", { class: "kpis" });
   ks.append(kpi(`<span class="etq alerta">Caso armado</span>`, f0(n("Caso armado")), "falta ubicar y verificar"),
