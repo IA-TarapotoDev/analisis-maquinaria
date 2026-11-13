@@ -31,13 +31,13 @@ Cada guía con partida en la ZTE y llegada en la ZTC cuyos bienes nombran una m�
 |---|---|
 | Serie de la máquina | El rótulo «SERIE …» de la guía o la última palabra de 8 o más caracteres con letras y números |
 | DAM con beneficio | Las DAM del importador (por PIN o motor), la consulta del equipo por serie o la hoja «Salidas por verificar» del Excel |
-| 4 años o menos al salir | Fecha (o año) de la DAM frente a la fecha de la guía |
+| 4 años o menos al salir | Fecha (o año) de la DAM frente a la fecha de la guía. Sin DAM conocida, si la guía declara el año de la máquina («AÑO 2013», «AÑO DE FABRICACIÓN: 2020») y al salir tenía más de 4 años, la salida se descarta: solo se trabajan máquinas de hasta 4 años |
 | Sin solicitud de traslado | El cuaderno de traslados (por DAM y serie). Si la máquina partió de otra circunscripción, queda por confirmar en esa intendencia |
 | Guía vigente a la ZTC | Guía emitida y no dada de baja. Si solo hay guías dadas de baja, el expediente queda como indicio |
 
 Cada máquina conserva su número de expediente (S01, S02…) de una versión a otra si el generador recibe el JSON de la versión anterior con `--salidas-previas`: se reconoce por su serie o, si no la tiene, por sus guías. Las salidas nuevas toman el número siguiente.
 
-Estados: **Caso armado** (las cinco pruebas: falta ubicar y verificar la máquina), **Indicio: guía dada de baja**, **Por completar** (dice qué falta y dónde conseguirlo), **Regresó a la ZTE** (una guía posterior la trae de vuelta) y **Descartada** (con solicitud de traslado, sin beneficio o con más de 4 años). La última ubicación es la llegada de la guía más reciente que nombra la máquina; si las guías posteriores del tenedor ya se consultaron y ninguna la nombra, el expediente lo dice.
+Estados: **Caso armado** (las cinco pruebas: falta ubicar y verificar la máquina), **Indicio: guía dada de baja**, **Por completar** (dice qué falta y dónde conseguirlo), **Regresó a la ZTE** (una guía posterior la trae de vuelta) y **Descartada** (con solicitud de traslado, sin beneficio, salida a más de 4 años de la DAM o, sin DAM conocida, máquina de más de 4 años según el año que declara la guía). La última ubicación es la llegada de la guía más reciente que nombra la máquina; si las guías posteriores del tenedor ya se consultaron y ninguna la nombra, el expediente lo dice.
 
 ### Tenedores: puntaje de riesgo
 

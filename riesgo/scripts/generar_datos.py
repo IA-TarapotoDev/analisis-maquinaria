@@ -726,6 +726,18 @@ PREFIJO_BIEN = re.compile(r"^(\d+\s*(UND|UNIDAD(ES)?|U)?\.?\s+|TRANSPORTE( EN CA
 SERIE_ROTULO = re.compile(r"(?:\bSERIAL|\bSERIE|\bS/N|\bPIN|\bVIN|\bCHASIS)\s*(?:DE\s+)?(?:LA\s+)?(?:MAQ(?:UINA|NA)?\.?)?\s*(?:NUMBER)?\s*[:#.\-*]*\s*([A-Z0-9][A-Z0-9\-]{4,19})")
 
 
+# Año de fabricación o de modelo que declara la descripción: «AÑO 2013», «AÑO DE FABRICACIÓN: 2020», «AÑO DE MODELO 2008», «AÑO2019»
+ANIO_FAB = re.compile(r"(?<![A-ZÑ])(?:A[ÑN]O|FABRICACI[OÓ]N)(?:\s*(?:DE\s+)?(?:FABRICACI[OÓ]N|FAB\.?|MODELO))?\s*[:.\-/]?\s*((?:19|20)\d{2})(?!\d)", re.I)
+
+
+def anio_fabricacion(textos, hasta=None):
+    """Año de la máquina según su descripción (el más reciente si hay varios); None si no lo dice."""
+    hasta = hasta or date.today().year + 1
+    anios = [int(a_) for t in textos for a_ in ANIO_FAB.findall(re.sub(r"%5[BD]", " ", t or "", flags=re.I))]
+    anios = [a_ for a_ in anios if 1950 <= a_ <= hasta]
+    return max(anios) if anios else None
+
+
 def maquinas_en_bienes(bienes):
     """Máquinas que nombra una lista de bienes de una guía: [(tipo, descripción, serie)]. La serie sale del rótulo
     «SERIE …» o, si no lo hay, de la última palabra de 8 o más caracteres con letras y números (no el modelo ni el motor)."""
@@ -2223,6 +2235,10 @@ def main(a):
             dam = {**dam, "benef": None, "fuente": "DAM posterior a la salida: revisar"}
             edad = None
         plazo = None if edad is None else edad <= PLAZO
+        # Año de la máquina según la guía: su descripción o, si no lo dice, los bienes que nombran su serie
+        fab = anio_fabricacion([v["maq"]["desc"]], int(g0["f"][:4]) + 1) or (
+            anio_fabricacion([b_ for i in gs_ for b_ in bienes_de(i) if serie in norm(b_)], int(g0["f"][:4]) + 1) if len(serie) >= 6 else None)
+        edad_fab = int(g0["f"][:4]) - fab if fab else None
         mov, rec = dueno(g0), g0["de"]
         venta_m = norm(g0["motivo"]).startswith("VENTA")
         ten = rec if venta_m and rec["ruc"] else mov
@@ -2249,6 +2265,9 @@ def main(a):
             estado, motivo = "Descartada", tras_nota
         elif plazo is False:
             estado, motivo = "Descartada", f"Salió {edad:g} años después de la importación (más de {PLAZO})"
+        elif plazo is None and edad_fab is not None and edad_fab > PLAZO:
+            # Sin una DAM que diga cuándo se importó, solo se trabajan máquinas de hasta 4 años
+            estado, motivo = "Descartada", f"Máquina antigua: la guía dice que es del año {fab} ({edad_fab} años al salir, más de {PLAZO})"
         elif regreso is not None:
             estado, motivo = "Regresó a la ZTE", f"Volvió el {ftx(regreso['f'])} con la guía {regreso['num']} ({regreso['l']['lugar']})"
         else:
@@ -2322,9 +2341,9 @@ def main(a):
             "maq": {"cat": v["maq"]["cat"], "desc": v["maq"]["desc"][:160], "serie": serie, "k": k_m if k_m and k_m in maq_por_k else None},
             "mov": mov, "rec": rec, "ten": ten, "motivo_g": g0["motivo"], "evid": "vigente" if vig else "baja",
             "p": g0["p"]["lugar"], "l": g0["l"]["lugar"], "ubic": ubic, "regreso": {"f": regreso["f"], "guia": regreso["num"], "lugar": regreso["l"]["lugar"]} if regreso is not None else None,
-            "dam": dam, "edad": edad, "tras": tras, "tras_nota": tras_nota, "cpe": cpe if cpe in casos_cpe else None, "venta": cpe or "",
+            "dam": dam, "edad": edad, "fab": fab, "tras": tras, "tras_nota": tras_nota, "cpe": cpe if cpe in casos_cpe else None, "venta": cpe or "",
             "exportada": c_["exp"] if exportada else "", "cliente": next((r for r in (ten["ruc"], mov["ruc"], rec["ruc"]) if r in cli), None),
-            "pruebas": {"serie": bool(serie) or None, "dam": dam["benef"], "plazo": plazo, "tras": (not tras) if tras is not None else None, "salida": bool(vig)},
+            "pruebas": {"serie": bool(serie) or None, "dam": dam["benef"], "plazo": plazo if plazo is not None else (False if (edad_fab or 0) > PLAZO else None), "tras": (not tras) if tras is not None else None, "salida": bool(vig)},
             "recs": recs, "seguir": seguir,
             "transp": [{"ruc": r, "nombre": n_} for r, n_ in transp.items()], "placas": sorted({pl_ for i in gs_ for pl_ in guias[i]["placas"]})[:6],
             "gs": sorted(set(gs_) | set(post), key=lambda i: (guias[i]["f"], i)), "ver": bool(ver), "obs": ver.get("obs", ""),

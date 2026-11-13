@@ -1196,7 +1196,7 @@ function vistaResumen(sec) {
       puntos: [nS("Caso armado") ? `<b>${f0(nS("Caso armado"))}</b> con las cinco pruebas: falta ubicar y verificar la máquina` : "Aún no hay casos armados",
         nS("Indicio: guía dada de baja") ? `<b>${f0(nS("Indicio: guía dada de baja"))}</b> con la guía a la ZTC dada de baja` : "",
         nS("Regresó a la ZTE") ? `<b>${f0(nS("Regresó a la ZTE"))}</b> que regresaron a la ZTE` : "",
-        nS("Descartada") ? `Descartadas: con solicitud de traslado o sin beneficio` : ""], boton: "Ver salidas", destino: "salidas" }),
+        nS("Descartada") ? `Descartadas: con solicitud de traslado, sin beneficio o máquinas de más de ${f0(D.kpi.plazo || 4)} años` : ""], boton: "Ver salidas", destino: "salidas" }),
     plan({ icono: "lupa", titulo: "Dónde buscar ahora", chip: "Siguiente paso", valor: f0(D.cola.length), sub: "búsquedas en cola, de más a menos rendidora",
       punto: "var(--lima)", puntos: D.cola.slice(0, 4).map((c, i) => `${i + 1}. ${esc(c.t)}: <b>${f0(c.n)}</b> ${esc(c.u)}`), boton: "Abrir la cola", destino: "buscar", pill: "lima" }),
     plan({ icono: "maquinas", titulo: "Parque con beneficio", chip: `${f0(K.maq_dams)} DAM`, valor: f0(P.total || K.maq_series), sub: "máquinas del importador que se siguen",
@@ -1281,8 +1281,9 @@ const pruebaIc = v => v === true ? `<span class="pr si">✓</span>` : v === fals
 const pruebasH = x => `<span class="prs">${PRUEBAS.map(([k, t]) => `<span title="${esc(t)}: ${x.pruebas[k] === true ? "sí" : x.pruebas[k] === false ? "no" : "falta"}">${pruebaIc(x.pruebas[k])}</span>`).join("")}</span>`;
 const quienH = q => q && (q.nombre || q.ruc) ? `${esc(q.nombre || q.ruc)}${q.nombre && q.ruc ? ` <span class="etq">${esc(q.ruc)}</span>` : ""}` : "s/d";
 const conTipos = bs => bs.map(b => b.directa ? b : { tipos: TIPOS_GRE, ...b });
-const EDADES = ["2 años o menos", "Más de 2 y hasta 4 años", "Más de 4 años", "Sin fecha de DAM"];
-const edadT = x => x.edad == null ? EDADES[3] : x.edad <= 2 ? EDADES[0] : x.edad <= 4 ? EDADES[1] : EDADES[2];
+const EDADES = ["2 años o menos", "Más de 2 y hasta 4 años", "Más de 4 años", "Sin fecha de DAM", "Sin fecha de DAM; máquina de más de 4 años según la guía"];
+const edadFab = x => x.fab ? +x.f.slice(0, 4) - x.fab : null;
+const edadT = x => x.edad == null ? (edadFab(x) > 4 ? EDADES[4] : EDADES[3]) : x.edad <= 2 ? EDADES[0] : x.edad <= 4 ? EDADES[1] : EDADES[2];
 
 function pedidoRuc(ruc, nombre, desde, grupo, hasta) {
   hasta = hasta || "hoy";
@@ -1329,7 +1330,7 @@ function fichaSalida(x) {
     serie: x.maq.serie ? `Serie ${copiable(x.maq.serie)}` : "La guía no indica la serie",
     dam: d.dam || d.f ? `${d.dam ? "DAM " + copiable(d.dam) + (d.serie ? " serie " + esc(d.serie) : "") : "DAM de " + esc(d.f) + " (falta el número)"}${d.f && d.dam ? " · " + (d.f.length > 4 ? fecha(d.f) : esc(d.f)) : ""}` +
       `${d.imp ? " · " + esc(d.imp) : ""}${d.benef === true ? " · con beneficio" : d.benef === false ? " · sin beneficio" : ""}${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}` : "Aún no se conoce la DAM de esta máquina",
-    plazo: x.edad == null ? "Falta la fecha de la DAM" : d.f && d.f.length === 4 ? `Importada en ${esc(d.f)}; salió en ${esc(x.f.slice(0, 4))}`
+    plazo: x.edad == null ? "Falta la fecha de la DAM" + (x.fab ? `. La guía dice que la máquina es del año ${esc(x.fab)}` + (edadFab(x) > 0 ? `: tenía ${f0(edadFab(x))} ${edadFab(x) === 1 ? "año" : "años"} al salir` : ", el mismo de la salida") : "") : d.f && d.f.length === 4 ? `Importada en ${esc(d.f)}; salió en ${esc(x.f.slice(0, 4))}`
       : `Salió ${NF1.format(x.edad)} ${x.edad === 1 ? "año" : "años"} después de la importación`,
     tras: esc(x.tras_nota || (x.tras == null ? "Sin confirmar" : "")),
     salida: x.evid === "vigente" ? `Guía vigente de ${esc(x.p)} a ${esc(x.l)} el ${fecha(x.f)}` : "La guía a la ZTC se dio de baja: falta confirmar a dónde llegó la máquina",
@@ -1371,7 +1372,7 @@ function vistaSalidas(sec) {
   ks.append(kpi(`<span class="etq alerta">Caso armado</span>`, f0(n("Caso armado")), "falta ubicar y verificar"),
     kpi(`<span class="etq pend">Por completar</span>`, f0(n("Por completar") + n("Indicio: guía dada de baja")), n("Indicio: guía dada de baja") ? `${f0(n("Indicio: guía dada de baja"))} con guía dada de baja` : "falta una o más pruebas"),
     kpi(`<span class="etq">Regresó a la ZTE</span>`, f0(n("Regresó a la ZTE")), "salió y volvió"),
-    kpi(`<span class="etq ok">Descartada</span>`, f0(n("Descartada")), "con traslado o sin beneficio"));
+    kpi(`<span class="etq ok">Descartada</span>`, f0(n("Descartada")), `con traslado, sin beneficio o de más de ${f0(D.kpi.plazo || 4)} años`));
   sec.append(ks);
   const t = tarjeta(); sec.append(t);
   if (!D.salidas.length) { t.append(el("p", { class: "nota" }, "Todavía no hay guías que lleven una máquina de la ZTE a la ZTC. Descargue guías con las listas de «Dónde buscar».")); return; }
