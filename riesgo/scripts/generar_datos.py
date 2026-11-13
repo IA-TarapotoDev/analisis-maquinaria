@@ -62,6 +62,7 @@ AFECTACION = {"10": "Gravado", "11": "Gravado (retiro)", "20": "Exonerado", "21"
               "30": "Inafecto", "40": "Exportación"}
 LINEAS = {"FR": "Repuestos", "FS": "Servicio técnico", "FP": "Maquinaria", "FV": "Otros ingresos"}
 HS_MAQ = {"8429", "8701", "8502", "8408", "8426", "8427", "8430", "8474", "8704", "8705"}
+PLAZO_ANIOS = 4      # años desde la importación en que la salida a la ZTC exige solicitud de traslado
 MENOR = {"USD": 10000, "PEN": 34000}   # valor de venta mínimo de un caso: debajo están anticipos, accesorios e implementos
 TASA_IMP = 0.18      # IGV 16 % + IPM 2 % sobre el valor en aduana: lo que se paga al trasladar a la ZTC
 CAT_MERC = {         # tipo de mercancía del cuaderno de traslados → tipos de máquina compatibles
@@ -96,7 +97,7 @@ def cat_maquina(desc):
         ("EXCAVADORA", "Excavadora"),
         ("MINICARGADOR", "Minicargador"), ("MINI CARGADOR", "Minicargador"), ("MINI-CARGADOR", "Minicargador"), ("CARGADOR", "Cargador frontal"),
         ("MOTONIVELADORA", "Motoniveladora"), ("RODILLO", "Rodillo compactador"),
-        ("TRACTOR AGRIC", "Tractor agrícola"), ("TRACTOR", "Tractor de orugas"), ("BULLDOZER", "Tractor de orugas"),
+        ("TRACTOR AGRIC", "Tractor agrícola"), ("BULLDOZER", "Tractor de orugas"),
         ("GRUPO ELECTROGENO", "Grupo electrógeno"), ("MOTOR MARINO", "Motor marino"), ("MOTOR", "Motor diésel"),
         ("MARTILLO", "Martillo hidráulico"), ("RASTRA", "Implemento agrícola"),
         ("ROTOVATOR", "Implemento agrícola"), ("CORTADORA", "Implemento agrícola"),
@@ -105,6 +106,8 @@ def cat_maquina(desc):
     for clave, cat in reglas:
         if clave in d:
             return cat
+        if clave == "BULLDOZER" and "TRACTOR" in d:       # «tractor» a secas es agrícola, salvo que sea de orugas
+            return "Tractor de orugas" if re.search(r"ORUGA|CADENA|\bD\d{1,2}[A-Z]?\b", d) else "Tractor agrícola"
     return "Otros"
 
 
@@ -434,7 +437,7 @@ def leer_control_ia(ruta, ruc):
             # Fecha de la DAM: numeración (a veces vacía o como número de Excel); si no, la del pago o la de la solicitud
             f_dam = next((f_ for f_ in (fecha_celda(r.get(c_)) for c_ in ("Fech_N_DAM", "Fecha_Pago_Ingr_Num", "FechaSolic_Reg")) if f_), "")
             dams_imp.setdefault(ruc_i, []).append({
-                "dam": dams_[0], "f": f_dam, "cat": cat_maquina(txt(r.get("Mercancía"))),
+                "dam": dams_[0], "f": f_dam, "cat": cat_maquina(txt(r.get("Mercancía"))), "rf": fecha_celda(r.get("Fecha_Recon_Fisico")),
                 "benef": not (col_res and norm(txt(r.get(col_res))).startswith(("IMPROCEDENTE", "SIN SOLICITUD")))})
             x["dams"] += 1
             x[clase] += 1
@@ -456,6 +459,14 @@ def leer_control_ia(ruta, ruc):
         meta["traslados_maq"] = {"total": int(len(am)), "anios": f"{anios[0]} a {anios[-1]}" if anios else "",
                                  "solicitantes": len({txt(v) for v in am.Doc_Solicitante}),
                                  "no_importador": int(sum(1 for v in am.Doc_Solicitante if txt(v) not in imp))}
+    # Desde el reconocimiento físico el importador puede vender o trasladar la mercancía: ahí empieza la búsqueda de sus guías
+    corte_rf = (date.today() - timedelta(days=round(365.25 * PLAZO_ANIOS))).isoformat()
+    for ruc_i, x in imp.items():
+        ben = [d_ for d_ in dams_imp.get(ruc_i, []) if d_["benef"]]
+        rfs = sorted(d_["rf"] for d_ in ben if d_["rf"] and d_["rf"] >= corte_rf)
+        fds = sorted(d_["f"] for d_ in ben if d_["f"] and d_["f"] >= corte_rf)
+        x["recon"] = rfs[0] if rfs else ""
+        x["desde"] = rfs[0] if rfs else (fds[0] if fds else "")
     meta["dams_imp"] = dams_imp
     meta["importadores"] = sorted(({**x, "anios": dict(sorted(x["anios"].items())), "ciudades": [k for k, _ in x["ciudades"].most_common(3)],
                                     "tipos": [k for k, _ in x["tipos"].most_common(3)]} for x in imp.values()),
@@ -723,6 +734,8 @@ def maquinas_en_bienes(bienes):
         n = norm(b)
         n2 = PREFIJO_BIEN.sub("", n)
         cat = cat_maquina(" ".join(n2.split()[:2]))
+        if cat in ("Tractor agrícola", "Tractor de orugas"):
+            cat = cat_maquina(n2)            # si es agrícola o de orugas se ve en el resto de la descripción
         if cat not in MAQ_GUIA or NO_ES_MAQ.search(n):
             continue
         m = SERIE_ROTULO.search(n)
@@ -2000,7 +2013,7 @@ def main(a):
     # Un expediente por máquina. Pruebas: serie, DAM con beneficio, 4 años o menos, sin solicitud de traslado y
     # dónde está. La verificación del equipo (Excel, hoja «Salidas por verificar») completa lo que las guías no dicen.
     hoy = date.today()
-    PLAZO = 4                                                    # años desde la importación en que la salida exige el traslado
+    PLAZO = PLAZO_ANIOS                                          # años desde la importación en que la salida exige el traslado
     ubi_df = pd.read_csv(a.ubigeos, dtype=str).fillna("")
     circ_u = dict(zip(ubi_df.ubigeo, ubi_df.circunscripcion)) if "circunscripcion" in ubi_df else {}
     serie_maq = {}                                               # código (8 últimos del PIN, o motor) → máquina del importador
@@ -2101,6 +2114,25 @@ def main(a):
         d0, total = date.fromisoformat(desde_iso), max(1, (hoy - date.fromisoformat(desde_iso)).days + 1)
         dias = sum(max(0, (min(hoy, date.fromisoformat(h_)) - max(d0, date.fromisoformat(d_))).days + 1) for d_, h_ in tramos)
         return round(min(1.0, dias / total), 2), tramos
+
+    def tramo_faltante(ruc, desde_iso, rol="emisor"):
+        """Primer y último día de [desde, hoy] sin guías consultadas del RUC en ese rol: la búsqueda que falta hacer.
+        None si ya está todo. El final es «hoy» cuando lo que falta llega hasta hoy."""
+        d0, cur, huecos = date.fromisoformat(desde_iso), date.fromisoformat(desde_iso), []
+        for d_, h_ in sorted(cob_ruc.get(ruc, {}).get(rol, [])):
+            a_, b_ = max(d0, date.fromisoformat(d_)), min(hoy, date.fromisoformat(h_))
+            if a_ > hoy:
+                break
+            if b_ < cur:
+                continue
+            if a_ > cur:
+                huecos.append((cur, a_ - timedelta(days=1)))
+            cur = b_ + timedelta(days=1)
+        if cur <= hoy:
+            huecos.append((cur, hoy))
+        if not huecos:
+            return None
+        return huecos[0][0].isoformat(), ("hoy" if huecos[-1][1] >= hoy else huecos[-1][1].isoformat())
 
     def anios_entre(f_dam, f_sal):
         """Antigüedad al salir. f_dam puede ser una fecha o solo el año."""
@@ -2275,8 +2307,10 @@ def main(a):
                 txt_c = (f"{nom(mov).rstrip('.')} figura en el cuaderno de la IA como importador con beneficio ({info_c.get('amarilla', 0)} DAM de maquinaria amarilla, "
                          f"{info_c.get('tras', 0)} traslados pedidos).")
                 if dams_cand:
+                    rf_txt = lambda d_: (f" (reconocida el {ftx(d_['rf'])}{', después de la salida' if d_['rf'] > g0['f'] else ''})" if d_.get("rf")
+                                         else " (sin reconocimiento físico)")
                     txt_c += (f" Busque la serie en sus DAM de {'cargadores' if familia_(v['maq']['cat']) == 'Cargador' else v['maq']['cat'].lower()} anteriores a la salida: "
-                              + ", ".join(d_["dam"] + ("" if d_["benef"] else " (sin beneficio)") for d_ in dams_cand[:8])
+                              + ", ".join(d_["dam"] + ("" if d_["benef"] else " (sin beneficio)") + rf_txt(d_) for d_ in dams_cand[:8])
                               + (f" y {len(dams_cand) - 8} más" if len(dams_cand) > 8 else "") + ".")
                 pasos.insert(0, txt_c)
         transp = {}
@@ -2550,7 +2584,28 @@ def main(a):
     for x in meta_ctl.get("importadores", []):
         anios_ok = sum(n_ for a_, n_ in x["anios"].items() if a_.isdigit() and int(a_) >= hoy.year - PLAZO)
         if anios_ok and x["amarilla"] + x["agricola"] > 0:
-            importadores.append({**x, "en_plazo": anios_ok, "cob": cobertura(x["ruc"], hace2)[0] if ruc_valido(x["ruc"]) else None, "es": x["ruc"] == ruc_imp})
+            falta = tramo_faltante(x["ruc"], x.get("desde") or hace2) if ruc_valido(x["ruc"]) else None
+            importadores.append({**x, "en_plazo": anios_ok, "cob": cobertura(x["ruc"], x.get("desde") or hace2)[0] if ruc_valido(x["ruc"]) else None,
+                                 "es": x["ruc"] == ruc_imp, "falta_d": falta[0] if falta else "", "falta_h": falta[1] if falta else ""})
+    # Cola: guías de otros importadores con beneficio, desde el reconocimiento físico de su primera DAM con beneficio
+    imp_pend = [x for x in importadores if not x["es"] and x.get("desde") and ruc_valido(x["ruc"]) and (x["cob"] or 0) < 0.8
+                and x["dams"] > x["sin_benef"] and x["falta_d"]]
+
+    def etq_imp(x):
+        ini = "desde el reconocimiento físico (" + ftx(x["desde"]) + ")" if x["falta_d"] == x["desde"] else "desde el " + ftx(x["falta_d"])
+        fin = "" if x["falta_h"] == "hoy" else " hasta el " + ftx(x["falta_h"]) + "; lo siguiente ya está descargado"
+        return f"{x['nombre']} ({x['ruc']}): guías como remitente {ini}{fin}"
+    imp_pend.sort(key=lambda x: (-(x["amarilla"] * 3 + x["agricola"] + x["otras"] - x["sin_benef"]), x["desde"]))
+    if imp_pend:
+        lote = imp_pend[:10]
+        cola.insert(next((k for k, c in enumerate(cola) if c["id"] == "citadas"), -1) + 1, {
+            "id": "importadores", "t": "Guías de otros importadores con beneficio", "n": len(lote), "u": "RUC por consultar",
+            "por": "Importadores que el cuaderno de la IA registra con DAM de maquinaria con beneficio. Sus guías de entrega muestran a quién y a dónde "
+                   "vendieron cada máquina. La búsqueda empieza en el reconocimiento físico de su primera DAM con beneficio de los últimos 4 años: "
+                   "desde ahí pueden vender o trasladar la mercancía. Si ya hay guías descargadas de una parte del periodo, se pide solo lo que falta. "
+                   "Van los que tienen más DAM de maquinaria"
+                   + (f"; quedan {len(imp_pend) - len(lote)} más para las siguientes listas." if len(imp_pend) > len(lote) else "."),
+            "busquedas": [{"etiqueta": etq_imp(x), "grupo": "importador", "rucEmisor": x["ruc"], "desde": x["falta_d"], "hasta": x["falta_h"]} for x in lote]})
 
     # ---------- Salida ----------
     dams = {}

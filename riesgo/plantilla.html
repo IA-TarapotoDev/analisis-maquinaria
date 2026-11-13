@@ -999,7 +999,7 @@ document.addEventListener("click", e => {
   const sl = e.target.closest("[data-salida]"); if (sl) { e.preventDefault(); irSalida(sl.dataset.salida); return; }
   const tn = e.target.closest("[data-tenedor]"); if (tn) { e.preventDefault(); irTenedor(tn.dataset.tenedor); return; }
   const lr = e.target.closest("[data-lista-ruc]");
-  if (lr) { e.preventDefault(); entregarPedido(pedidoRuc(lr.dataset.listaRuc, lr.dataset.listaNombre || "", lr.dataset.listaDesde, lr.dataset.listaGrupo || "ruc"), lr); return; }
+  if (lr) { e.preventDefault(); entregarPedido(pedidoRuc(lr.dataset.listaRuc, lr.dataset.listaNombre || "", lr.dataset.listaDesde, lr.dataset.listaGrupo || "ruc", lr.dataset.listaHasta), lr); return; }
   const a = e.target.closest("[data-caso]"); if (a) { e.preventDefault(); irCaso(a.dataset.caso); }
 });
 
@@ -1284,9 +1284,10 @@ const conTipos = bs => bs.map(b => b.directa ? b : { tipos: TIPOS_GRE, ...b });
 const EDADES = ["2 años o menos", "Más de 2 y hasta 4 años", "Más de 4 años", "Sin fecha de DAM"];
 const edadT = x => x.edad == null ? EDADES[3] : x.edad <= 2 ? EDADES[0] : x.edad <= 4 ? EDADES[1] : EDADES[2];
 
-function pedidoRuc(ruc, nombre, desde, grupo) {
-  return pedidoGRE(`${grupo}-${ruc}`, `Guías de ${nombre || ruc} como remitente`, [{ etiqueta: `${nombre || ruc} (${ruc}): guías como remitente desde el ${fecha(desde)}`,
-    grupo, rucEmisor: ruc, tipos: TIPOS_GRE, desde, hasta: "hoy" }]);
+function pedidoRuc(ruc, nombre, desde, grupo, hasta) {
+  hasta = hasta || "hoy";
+  return pedidoGRE(`${grupo}-${ruc}`, `Guías de ${nombre || ruc} como remitente`, [{ etiqueta: `${nombre || ruc} (${ruc}): guías como remitente desde el ${fecha(desde)}` +
+    (hasta === "hoy" ? "" : ` hasta el ${fecha(hasta)}`), grupo, rucEmisor: ruc, tipos: TIPOS_GRE, desde, hasta }]);
 }
 function pedidoSalida(x) {
   const vistos = new Set(), busq = [];
@@ -1425,12 +1426,19 @@ function vistaBuscar(sec) {
   const otros = D.importadores.filter(x => !x.es);
   if (otros.length) {
     const ti = tarjeta("Otros importadores con maquinaria y beneficio", `Del cuaderno de control: DAM de maquinaria amarilla y agrícola de los últimos ${f0(D.kpi.plazo || 4)} años. El cuaderno no trae las series, ` +
-      "así que sus máquinas se identifican por las guías. Si el importador no escribe la serie en la guía, la llegada en la ZTC igual es un indicio: aparecerá en «Salidas» como máquina sin serie. «Lista» copia la búsqueda de sus guías como remitente del último año.");
+      "así que sus máquinas se identifican por las guías. Si el importador no escribe la serie en la guía, la llegada en la ZTC igual es un indicio: aparecerá en «Salidas» como máquina sin serie. " +
+      "«Guías consultadas» se mide desde el reconocimiento físico de su primera DAM con beneficio: desde ahí puede vender o trasladar la mercancía. «Lista» copia la búsqueda de sus guías como remitente para las fechas que aún faltan descargar desde ese día.");
     ti.id = "importadores";
     tabla(ti, { porPag: 12, archivo: "importadores_maquinaria.csv", filas: otros, ph: "Buscar importador o RUC…", buscar: true, orden: { i: 2, d: -1 },
       cols: [{ k: "nombre", t: "Importador", largo: 1 }, { k: "ruc", t: "RUC", c: 1 }, { k: "amarilla", t: "DAM amarilla", n: 1 }, { k: "agricola", t: "DAM agrícola", n: 1 },
+        { t: "Desde (reconocimiento)", v: r => r.desde || "", h: r => r.desde ? fecha(r.desde) + (r.recon ? "" : ` <span class="etq" title="Aún sin reconocimiento físico: se toma la fecha de su primera DAM">DAM</span>`) : "–" },
         { t: "Guías consultadas", v: r => r.cob == null ? -1 : r.cob, h: r => r.cob == null ? "–" : `<span class="etq ${r.cob >= 0.8 ? "ok" : r.cob > 0 ? "pend" : ""}">${Math.round(r.cob * 100)} %</span>` },
-        { t: "Lista", v: () => "", h: r => rucGRE(r.ruc) ? `<button class="btn claro mini" type="button" data-lista-ruc="${esc(r.ruc)}" data-lista-nombre="${esc(r.nombre)}" data-lista-desde="${isoMas(hoyLocal(), -365)}" data-lista-grupo="importador" title="Copia la lista de sus guías como remitente del último año">${ic("camion")}Lista</button>` : "–" },
+        { t: "Lista", v: () => "", h: r => {
+          if (!rucGRE(r.ruc)) return "–";
+          const d = r.falta_d || r.desde || isoMas(hoyLocal(), -365), hs = r.falta_d ? r.falta_h || "hoy" : "hoy";
+          const que = `del ${fecha(d)} ${hs === "hoy" ? "a hoy" : "al " + fecha(hs)}` + (r.falta_d || !r.desde ? "" : " (ya está todo descargado: sirve para actualizar)");
+          return `<button class="btn claro mini" type="button" data-lista-ruc="${esc(r.ruc)}" data-lista-nombre="${esc(r.nombre)}" data-lista-desde="${esc(d)}" data-lista-hasta="${esc(hs)}" data-lista-grupo="importador" title="Copia la lista de sus guías como remitente ${esc(que)}">${ic("camion")}Lista</button>`;
+        } },
         { t: "Tipos", v: r => (r.tipos || []).join(", "), largo: 1 }, { t: "Ciudad", v: r => (r.ciudades || []).join(", "), largo: 1 },
         { k: "sin_benef", t: "Sin beneficio", n: 1 }, { k: "tras", t: "Traslados pedidos", n: 1 }] });
     sec.append(ti);

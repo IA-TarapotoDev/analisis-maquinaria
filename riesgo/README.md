@@ -46,12 +46,13 @@ Suma: ya movió maquinaria a la ZTC (4); guía a la ZTC dada de baja (3); domici
 ### Cola de búsqueda
 
 1. **Guías de remitente que cita un transportista hacia la ZTC**: la guía de transportista de la ZTE a la ZTC que no detalla la carga cita la guía del remitente; si esa no está descargada, se consulta directo por su número (primero las del importador, luego las de más peso). Las guías físicas (series 0001…) no están en el sistema de guías electrónicas y solo se cuentan.
-2. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, hasta 40 después de la última conocida y, hacia atrás, las necesarias para cubrir los últimos 4 años (según el ritmo con que la serie emite guías; si la primera conocida ya es anterior a ese plazo, no se retrocede). Los 40 posteriores van marcados: pueden no existir todavía, y el extractor deja de probar la serie cuando 10 seguidos no existen. Un hueco que SUNAT ya confirmó que no existe no se vuelve a pedir.
-3. **Facturas de máquinas sin comprador identificado**: ventas de maquinaria sin serie enlazada (ni XML ni guía con la serie). La factura detallada trae la serie y dice quién compró cada máquina, aunque la venta no tenga indicios: un comprador de la ZTE que compró sin IGV no forma caso, pero su máquina puede terminar en la ZTC. Se descargan a mano del portal del importador; la lista «Comprobantes por descargar» (pestaña Ventas) las ordena por el riesgo del comprador (prioridades 4 a 6).
-4. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
-5. **Tenedores con más riesgo** sin guías consultadas desde la compra.
-6. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.
-7. **Excel de consultas**: lo que solo se puede ver en el sistema.
+2. **Guías de otros importadores con beneficio**: los que el cuaderno registra con DAM de maquinaria con beneficio y cuyas guías como remitente no están consultadas. La búsqueda de cada uno empieza en el reconocimiento físico de su primera DAM con beneficio de los últimos 4 años (desde ahí puede vender o trasladar la mercancía); si aún no tiene reconocimiento, en la fecha de su primera DAM. Si ya hay guías descargadas de una parte de ese periodo, se pide solo lo que falta. Van de 10 en 10, primero los que tienen más DAM de maquinaria.
+3. **Guías de máquinas del importador que faltan** (series TP): consulta directa por número de las que no están descargadas, hasta 40 después de la última conocida y, hacia atrás, las necesarias para cubrir los últimos 4 años (según el ritmo con que la serie emite guías; si la primera conocida ya es anterior a ese plazo, no se retrocede). Los 40 posteriores van marcados: pueden no existir todavía, y el extractor deja de probar la serie cuando 10 seguidos no existen. Un hueco que SUNAT ya confirmó que no existe no se vuelve a pedir.
+4. **Facturas de máquinas sin comprador identificado**: ventas de maquinaria sin serie enlazada (ni XML ni guía con la serie). La factura detallada trae la serie y dice quién compró cada máquina, aunque la venta no tenga indicios: un comprador de la ZTE que compró sin IGV no forma caso, pero su máquina puede terminar en la ZTC. Se descargan a mano del portal del importador; la lista «Comprobantes por descargar» (pestaña Ventas) las ordena por el riesgo del comprador (prioridades 4 a 6).
+5. **Seguir las máquinas que ya salieron**: guías posteriores del tenedor y de quien la recibió, si aún no están consultadas.
+6. **Tenedores con más riesgo** sin guías consultadas desde la compra.
+7. **Transportistas que ya llevaron máquinas** y no están consultados en los últimos dos años.
+8. **Excel de consultas**: lo que solo se puede ver en el sistema.
 
 ### Control de la DAM (cuaderno de la IA)
 
@@ -73,7 +74,7 @@ El tablero no consulta a SUNAT: arma listas de búsqueda que se copian y se pega
 |---|---|
 | **Copiar la lista para el extractor** (pestaña Buscar, cola de búsqueda) | La búsqueda de cada paso de la cola: las guías de remitente que cita un transportista hacia la ZTC y las guías de máquinas del importador que faltan (consulta directa por número), las guías posteriores de quien movió o recibió una máquina que ya salió, y las guías como remitente de los tenedores con más riesgo |
 | **Seguir la máquina** (ficha de cada salida) | Las guías como remitente del tenedor y de quien recibió la máquina, desde 3 días antes de la salida hasta hoy, si aún no están consultadas |
-| **Lista** (tablas de Buscar y ficha de cada tenedor) | Las guías de ese RUC como remitente: desde su primera compra (tenedor), del último año (otro importador) o de los últimos dos años (transportista) |
+| **Lista** (tablas de Buscar y ficha de cada tenedor) | Las guías de ese RUC como remitente: desde su primera compra (tenedor), desde el reconocimiento físico de su primera DAM con beneficio, solo las fechas que faltan descargar (otro importador) o de los últimos dos años (transportista) |
 | **Lista del día** (pestaña Buscar, «Listas de rutina») | Ayer y hoy: los compradores **reincidentes** (con al menos un caso alto o medio) como remitentes y destinatarios, el importador como remitente y destinatario, y los **transportistas vigilados** (guías de remitente, transportista y por eventos) |
 | **Buscar guías** (ficha de cada venta) | Las guías del comprador como destinatario y como remitente desde 3 días antes hasta 15 días después de la venta, y las guías citadas en la factura (XML), consultadas directo por su número |
 | **Guías de los casos altos** (pestaña Buscar, «Listas de rutina») | Lo mismo que «Buscar guías», para todas las ventas de nivel alto a la vez |
