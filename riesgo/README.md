@@ -29,7 +29,7 @@ Cada guía con partida en la ZTE y llegada en la ZTC cuyos bienes nombran una m�
 
 | Prueba | De dónde sale |
 |---|---|
-| Serie de la máquina | El rótulo «SERIE …», «S/N …», «N/S …», «VIN …» o «CHASIS …» de la guía (la serie termina antes de un «--» o del rótulo siguiente, como «-MOTOR») o la última palabra de 8 o más caracteres con letras y números. Una serie solo de números, como un chasis «1234567», se busca en otras guías sin otro dígito pegado |
+| Serie de la máquina | El rótulo «SERIE …», «S/N …», «N/S …», «VIN …» o «CHASIS …» de la guía (la serie termina antes de un «--» o del rótulo siguiente, como «-MOTOR») o la última palabra de 8 o más caracteres con letras y números que no sea el valor de otro rótulo (en «MODELO 416-ABC12345» el modelo es 416 y la serie, ABC12345). Una serie solo de números, como un chasis «1234567», se busca en otras guías sin otro dígito pegado |
 | DAM con beneficio | Las DAM del importador (por PIN o motor), la consulta del equipo por serie o la hoja «Salidas por verificar» del Excel |
 | 4 años o menos al salir | Fecha (o año) de la DAM frente a la fecha de la guía. Sin DAM conocida, si la guía declara el año de la máquina («AÑO 2013», «AÑO DE FABRICACIÓN: 2020») y al salir tenía más de 4 años, la salida se descarta: solo se trabajan máquinas de hasta 4 años |
 | Sin solicitud de traslado | El cuaderno de traslados (por DAM y serie). Si la máquina partió de otra circunscripción, queda por confirmar en esa intendencia |

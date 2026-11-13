@@ -773,10 +773,17 @@ def maquinas_en_bienes(bienes):
             serie = ""
         if not serie:
             pal = re.findall(r"[A-Z0-9]+", n)
+
+            def es_rotulo(i):
+                """La palabra es el valor de otro rótulo: el motor, la potencia, la marca o la placa (hasta 3 palabras antes), o el
+                modelo (justo después de «MODELO», o tras «N°»). En «MODELO 416-ABC12345» el modelo es 416 y la serie, ABC12345."""
+                if {"MOTOR", "POTENCIA", "MARCA", "PLACA"} & set(pal[max(0, i - 3):i]):
+                    return True
+                j = next((k for k in range(i - 1, max(-1, i - 4), -1) if pal[k] in ("MODELO", "MOD")), None)
+                return j is not None and all(p_ in ("N", "NO", "NRO", "DE") for p_ in pal[j + 1:i])
             for i in range(len(pal) - 1, -1, -1):
                 w = pal[i]
-                if len(w) >= 8 and sum(c.isdigit() for c in w) >= 3 and re.search(r"[A-Z]", w) \
-                        and not {"MODELO", "MOD", "MOTOR", "POTENCIA", "MARCA", "PLACA"} & set(pal[max(0, i - 3):i]):
+                if len(w) >= 8 and sum(c.isdigit() for c in w) >= 3 and re.search(r"[A-Z]", w) and not es_rotulo(i):
                     serie = w
                     break
         out.append((cat, b, re.sub(r"[^A-Z0-9]", "", serie)))
