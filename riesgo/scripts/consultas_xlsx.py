@@ -13,7 +13,7 @@ El libro es una lista de trabajo para el equipo de gestión de riesgo:
   - DAM 2024 de traslados: DAM anteriores al periodo con traslados de maquinaria; el PIN de cada serie
     confirma o descarta la venta probable.
   - Salidas por verificar: máquinas que una guía de remisión lleva de la ZTE a la ZTC. El equipo anota la DAM
-    de la serie, si tiene el beneficio, si tiene solicitud de traslado y dónde se verificó la máquina.
+    de la serie, si tiene el beneficio, si tiene solicitud de traslado, el año de la máquina y dónde se verificó.
 Las celdas grises vienen del tablero y las amarillas se completan. El libro completado se devuelve al
 generador con «generar_datos.py ... --consultas consultas.xlsx».
 
@@ -226,6 +226,11 @@ def main(r_json, salida, r_previo=None):
         prio_x = 1 if x.get("imp_c") and x["estado"] == "Por completar" else PRIO_X.get(x["estado"], 3)   # la movió otro importador con beneficio
         dam_tab = ((x["dam"]["dam"] + (" serie " + x["dam"]["serie"] if x["dam"]["serie"] else "")) if x["dam"]["fuente"] not in ("", "Verificación del equipo")
                    else ("Revisar las DAM del importador: " + ", ".join(x["dams_cand"])) if x.get("dams_cand") and x["dam"]["benef"] is None else "")
+        if "uaderno de la IA" in (x["dam"].get("fuente") or ""):          # DAM completada con el cuaderno de la IA
+            d_ = x["dam"]
+            dam_tab = (f"{d_['dam']} (cuaderno de la IA: " + (f"del {fx(d_['f'])}, " if len(d_.get("f") or "") == 10 else "")
+                       + ("con beneficio" if d_["benef"] else "sin beneficio" if d_["benef"] is False else "beneficio por confirmar")
+                       + (", sin solicitud de traslado" if x["tras"] is False else "") + ")")
         if x.get("tras_cand"):              # traslados que pidió ese importador cerca de la salida: la máquina puede estar en uno
             dam_tab = (dam_tab + ". " if dam_tab else "") + "Traslados del importador cerca de la salida: " + ", ".join(x["tras_cand"])
         filas_x.append([prio_x, x["id"], x["estado"], f"{x['maq']['cat']}: {x['maq']['desc']}"[:150], x["maq"]["serie"],
@@ -238,7 +243,7 @@ def main(r_json, salida, r_previo=None):
               ("Quién la movió", 32, "dato"), ("Quién la recibió", 32, "dato"), ("Fecha de salida", 12, "dato"), ("Partida", 24, "dato"),
               ("Última ubicación conocida", 44, "dato"), ("Guías", 26, "dato"), ("Guía principal (clave)", 26, "dato"), ("Qué falta", 40, "dato"),
               ("DAM según el tablero", 22, "dato"),
-              ("Serie (si la guía no la trae)", 20, "llenar"), ("DAM", 20, "llenar"), ("Serie de la DAM", 9, "llenar"), ("Año o fecha de la DAM", 13, "llenar"),
+              ("Serie (si la guía no la trae)", 20, "llenar"), ("DAM", 20, "llenar"), ("Serie de la DAM", 9, "llenar"), ("Año o fecha de la DAM", 13, "llenar"), ("Año de la máquina", 10, "llenar"),
               ("Importador", 28, "llenar"), ("¿Con beneficio?", 11, "llenar"), ("¿Tiene solicitud de traslado?", 12, "llenar"),
               ("Expediente de traslado", 22, "llenar"), ("Ubicación verificada (dirección y fecha)", 36, "llenar"), ("Observaciones", 40, "llenar")]
     listas_x = {"¿Con beneficio?": "si_no", "¿Tiene solicitud de traslado?": "si_no"}
@@ -278,8 +283,10 @@ def main(r_json, salida, r_previo=None):
          "cada máquina mostrará el control de su DAM, y los casos se confirman o se descartan.", f()),
         ("6. Hoja «Salidas por verificar» (la primera): cada fila es una máquina que una guía lleva de la ZTE a la ZTC. Busque su serie en el "
          "sistema y anote la DAM, el importador, si tiene el beneficio y si tiene solicitud de traslado. El año se toma del número de la DAM "
-         "(118-2024-10-…): anote la fecha solo si la tiene. Con «Sí» en beneficio y «No» en traslado, y 4 años o menos desde la importación, "
-         "el expediente pasa a caso armado.", f()),
+         "(118-2024-10-…): anote la fecha solo si la tiene. Si la DAM está en el cuaderno de la IA Tarapoto, basta su número: el tablero completa "
+         "la fecha, el importador, el beneficio y si tiene solicitud de traslado. Con «Sí» en beneficio y «No» en traslado, y 4 años o menos "
+         "desde la importación, el expediente pasa a caso armado. Si conoce el año de la máquina (fabricación o modelo), anótelo en «Año de la "
+         "máquina»: sin DAM conocida, una máquina de más de 4 años al salir se descarta.", f()),
         ("", None),
         ("Leyenda", f(size=12, bold=True)),
     ]

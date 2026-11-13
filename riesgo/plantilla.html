@@ -1281,7 +1281,7 @@ const pruebaIc = v => v === true ? `<span class="pr si">✓</span>` : v === fals
 const pruebasH = x => `<span class="prs">${PRUEBAS.map(([k, t]) => `<span title="${esc(t)}: ${x.pruebas[k] === true ? "sí" : x.pruebas[k] === false ? "no" : "falta"}">${pruebaIc(x.pruebas[k])}</span>`).join("")}</span>`;
 const quienH = q => q && (q.nombre || q.ruc) ? `${esc(q.nombre || q.ruc)}${q.nombre && q.ruc ? ` <span class="etq">${esc(q.ruc)}</span>` : ""}` : "s/d";
 const conTipos = bs => bs.map(b => b.directa ? b : { tipos: TIPOS_GRE, ...b });
-const EDADES = ["2 años o menos", "Más de 2 y hasta 4 años", "Más de 4 años", "Sin fecha de DAM", "Sin fecha de DAM; máquina de más de 4 años según la guía"];
+const EDADES = ["2 años o menos", "Más de 2 y hasta 4 años", "Más de 4 años", "Sin fecha de DAM", "Sin fecha de DAM; máquina de más de 4 años"];
 const edadFab = x => x.fab ? +x.f.slice(0, 4) - x.fab : null;
 const edadT = x => x.edad == null ? (edadFab(x) > 4 ? EDADES[4] : EDADES[3]) : x.edad <= 2 ? EDADES[0] : x.edad <= 4 ? EDADES[1] : EDADES[2];
 
@@ -1330,7 +1330,7 @@ function fichaSalida(x) {
     serie: x.maq.serie ? `Serie ${copiable(x.maq.serie)}` : "La guía no indica la serie",
     dam: d.dam || d.f ? `${d.dam ? "DAM " + copiable(d.dam) + (d.serie ? " serie " + esc(d.serie) : "") : "DAM de " + esc(d.f) + " (falta el número)"}${d.f && d.dam ? " · " + (d.f.length > 4 ? fecha(d.f) : esc(d.f)) : ""}` +
       `${d.imp ? " · " + esc(d.imp) : ""}${d.benef === true ? " · con beneficio" : d.benef === false ? " · sin beneficio" : ""}${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}` : "Aún no se conoce la DAM de esta máquina",
-    plazo: x.edad == null ? "Falta la fecha de la DAM" + (x.fab ? `. La guía dice que la máquina es del año ${esc(x.fab)}` + (edadFab(x) > 0 ? `: tenía ${f0(edadFab(x))} ${edadFab(x) === 1 ? "año" : "años"} al salir` : ", el mismo de la salida") : "") : d.f && d.f.length === 4 ? `Importada en ${esc(d.f)}; salió en ${esc(x.f.slice(0, 4))}`
+    plazo: x.edad == null ? "Falta la fecha de la DAM" + (x.fab ? `. ${x.fab_eq ? "Según el equipo, la máquina" : "La guía dice que la máquina"} es del año ${esc(x.fab)}` + (edadFab(x) > 0 ? `: tenía ${f0(edadFab(x))} ${edadFab(x) === 1 ? "año" : "años"} al salir` : ", el mismo de la salida") : "") : d.f && d.f.length === 4 ? `Importada en ${esc(d.f)}; salió en ${esc(x.f.slice(0, 4))}`
       : `Salió ${NF1.format(x.edad)} ${x.edad === 1 ? "año" : "años"} después de la importación`,
     tras: esc(x.tras_nota || (x.tras == null ? "Sin confirmar" : "")),
     salida: x.evid === "vigente" ? `Guía vigente de ${esc(x.p)} a ${esc(x.l)} el ${fecha(x.f)}` : "La guía a la ZTC se dio de baja: falta confirmar a dónde llegó la máquina",

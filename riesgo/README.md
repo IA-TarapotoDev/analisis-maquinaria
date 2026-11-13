@@ -30,9 +30,9 @@ Cada guía con partida en la ZTE y llegada en la ZTC cuyos bienes nombran una m�
 | Prueba | De dónde sale |
 |---|---|
 | Serie de la máquina | El rótulo «SERIE …», «S/N …», «N/S …», «VIN …» o «CHASIS …» de la guía (la serie termina antes de un «--» o del rótulo siguiente, como «-MOTOR») o la última palabra de 8 o más caracteres con letras y números que no sea el valor de otro rótulo (en «MODELO 416-ABC12345» el modelo es 416 y la serie, ABC12345). Una serie solo de números, como un chasis «1234567», se busca en otras guías sin otro dígito pegado |
-| DAM con beneficio | Las DAM del importador (por PIN o motor), la consulta del equipo por serie o la hoja «Salidas por verificar» del Excel |
-| 4 años o menos al salir | Fecha (o año) de la DAM frente a la fecha de la guía. Sin DAM conocida, si la guía declara el año de la máquina («AÑO 2013», «AÑO DE FABRICACIÓN: 2020») y al salir tenía más de 4 años, la salida se descarta: solo se trabajan máquinas de hasta 4 años |
-| Sin solicitud de traslado | El cuaderno de traslados (por DAM y serie). Si la máquina partió de otra circunscripción, queda por confirmar en esa intendencia |
+| DAM con beneficio | Las DAM del importador (por PIN o motor), la consulta del equipo por serie o la hoja «Salidas por verificar» del Excel. Si la DAM anotada está en el cuaderno de la IA (ConsolidadoT), basta su número: la fecha, el importador y el beneficio se completan con el cuaderno |
+| 4 años o menos al salir | Fecha (o año) de la DAM frente a la fecha de la guía. Sin DAM conocida, si la guía declara el año de la máquina («AÑO 2013», «AÑO DE FABRICACIÓN: 2020») y al salir tenía más de 4 años, la salida se descarta: solo se trabajan máquinas de hasta 4 años. El año que anota el equipo en «Año de la máquina» manda sobre el de la guía |
+| Sin solicitud de traslado | El cuaderno de traslados (por DAM y serie). Para una DAM del cuaderno anotada por el equipo: si el cuaderno no tiene traslado para esa DAM, cuenta como sin solicitud; si lo tiene, queda por confirmar que incluya la máquina. Si la máquina partió de otra circunscripción, queda por confirmar en esa intendencia |
 | Guía vigente a la ZTC | Guía emitida y no dada de baja. Si solo hay guías dadas de baja, el expediente queda como indicio |
 
 Cada máquina conserva su número de expediente (S01, S02…) de una versión a otra si el generador recibe el JSON de la versión anterior con `--salidas-previas`: se reconoce por su serie o, si no la tiene, por sus guías. Las salidas nuevas toman el número siguiente.

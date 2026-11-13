@@ -441,7 +441,8 @@ def leer_control_ia(ruta, ruc):
             f_dam = next((f_ for f_ in (fecha_celda(r.get(c_)) for c_ in ("Fech_N_DAM", "Fecha_Pago_Ingr_Num", "FechaSolic_Reg")) if f_), "")
             dams_imp.setdefault(ruc_i, []).append({
                 "dam": dams_[0], "f": f_dam, "cat": cat_maquina(txt(r.get("Mercancía"))), "rf": fecha_celda(r.get("Fecha_Recon_Fisico")),
-                "benef": not (col_res and norm(txt(r.get(col_res))).startswith(("IMPROCEDENTE", "SIN SOLICITUD")))})
+                "benef": not (col_res and norm(txt(r.get(col_res))).startswith(("IMPROCEDENTE", "SIN SOLICITUD"))),
+                "res": txt(r.get(col_res)) if col_res else ""})
             x["dams"] += 1
             x[clase] += 1
             x["anios"][dams_[0].split("-")[1]] += 1
@@ -463,6 +464,16 @@ def leer_control_ia(ruta, ruc):
                     "clase": CLASES.get(norm(r.get("Tipo_Mercancia")), "otras"), "cant": num(r.get("Cantidad_Trasladada")),
                     "dams": claves_dam(r.get("Num_DAM")), "dams_txt": re.sub(r"\s+", " ", txt(r.get("Num_DAM"))),
                     "series": re.sub(r"\s+", " ", txt(r.get("Series_DAM"))), "res": txt(r.get("Resultado"))})
+    # Cuando el equipo anota una DAM del cuaderno, el tablero completa su fecha, importador, beneficio y traslados con estos índices
+    meta["dam_idx"] = {}
+    for ruc_i, ds in dams_imp.items():
+        for d_ in ds:
+            meta["dam_idx"].setdefault(d_["dam"], {**d_, "ruc": ruc_i, "nombre": imp.get(ruc_i, {}).get("nombre", "")})
+    meta["tras_por_dam"] = {}
+    for ruc_i, ts in meta["tras_imp"].items():
+        for t_ in ts:
+            for d_ in t_["dams"]:
+                meta["tras_por_dam"].setdefault(d_, []).append(t_)
     if len(tr_todos) and "Tipo_Mercancia" in tr_todos:
         tm = tr_todos[tr_todos.Tipo_Mercancia.map(lambda v: norm(v) in ("MAQUINARIA AMARILLA", "MAQUINARIA AGRICOLA"))]
         am = tm[tm.Tipo_Mercancia.map(lambda v: norm(v) == "MAQUINARIA AMARILLA")]
@@ -564,7 +575,8 @@ def leer_consultas(ruta):
         campos = {"serie": re.sub(r"[^A-Z0-9]", "", norm(txt(r.get("Serie (si la guía no la trae)")))), "dam": (claves_dam(r.get("DAM")) or [txt(r.get("DAM"))])[0],
                   "serie_dam": txt(r.get("Serie de la DAM")).split(".")[0], "f_dam": anio_o_fecha(r.get("Año o fecha de la DAM")), "imp": txt(r.get("Importador")),
                   "benef": txt(r.get("¿Con beneficio?")), "tras": txt(r.get("¿Tiene solicitud de traslado?")), "exp": txt(r.get("Expediente de traslado")),
-                  "ubic": txt(r.get("Ubicación verificada (dirección y fecha)")), "obs": txt(r.get("Observaciones"))}
+                  "ubic": txt(r.get("Ubicación verificada (dirección y fecha)")), "obs": txt(r.get("Observaciones")),
+                  "fab": (re.findall(r"(?:19|20)\d{2}", txt(r.get("Año de la máquina"))) or [""])[0]}
         if clave and any(campos.values()):
             out["salidas"][f"{clave}|{serie_g}"] = campos
     for r in filas("DAM 2024 de traslados"):
@@ -2310,6 +2322,27 @@ def main(a):
                 tras = si_no(ver["tras"])
                 tras_nota = ((f"Con solicitud de traslado: {ver['exp']}" if ver.get("exp") else "Con solicitud de traslado") if tras
                              else "Sin solicitud de traslado") + " (verificación del equipo)"
+        # Una DAM del cuaderno de la IA (anotada por el equipo o deducida): fecha, importador, beneficio y traslado salen del cuaderno
+        c_dam = (meta_ctl.get("dam_idx") or {}).get(dam["dam"]) if dam["dam"] and not k_m else None
+        if c_dam:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", dam["f"] or "") and c_dam["f"]:
+                dam["f"] = c_dam["f"]
+            if not dam["imp"] or dam["imp"] == "Otro importador":
+                dam["imp"] = c_dam["nombre"]
+            if dam["benef"] is None:
+                dam["benef"] = c_dam["benef"]
+                dam["res_ia"] = c_dam.get("res", "")
+            dam["fuente"] = f"{dam['fuente']} y cuaderno de la IA" if dam["fuente"] else "Cuaderno de la IA"
+            if tras is None:
+                t_dam = [t_ for t_ in (meta_ctl.get("tras_por_dam") or {}).get(dam["dam"], []) if norm(t_["tipo"]).startswith("ZTE A ZTC")]
+                if t_dam:
+                    tras_nota = ("El cuaderno de la IA tiene " + ("el traslado " if len(t_dam) == 1 else "los traslados ")
+                                 + ", ".join(f"{t_['exp']} del {ftx(t_['f'])}" + (f" (series {t_['series']})" if t_["series"] else "") for t_ in t_dam[:4])
+                                 + " para esa DAM: confirmar si incluye esta máquina")
+                elif circ and circ != "IA TARAPOTO":
+                    tras_nota = f"No figura en el cuaderno de Tarapoto, pero la máquina partió de la circunscripción de la {circ}: confirmar ahí"
+                else:
+                    tras, tras_nota = False, "No figura en el cuaderno de traslados de la IA Tarapoto"
         edad = anios_entre(dam["f"], g0["f"])
         # Una máquina no puede salir antes de importarse: si la DAM es posterior a la salida, la serie o el enlace están mal
         aviso_dam = ""
@@ -2320,7 +2353,8 @@ def main(a):
             edad = None
         plazo = None if edad is None else edad <= PLAZO
         # Año de la máquina según la guía: su descripción o, si no lo dice, los bienes que nombran su serie
-        fab = anio_fabricacion([v["maq"]["desc"]], int(g0["f"][:4]) + 1) or (
+        fab_eq = int(ver["fab"]) if ver.get("fab") else None           # el año que anotó el equipo manda sobre el de la guía
+        fab = fab_eq or anio_fabricacion([v["maq"]["desc"]], int(g0["f"][:4]) + 1) or (
             anio_fabricacion([b_ for i in gs_ for b_ in bienes_de(i) if nombra(serie, b_)], int(g0["f"][:4]) + 1) if len(serie) >= 6 else None)
         edad_fab = int(g0["f"][:4]) - fab if fab else None
         mov, rec = dueno(g0), g0["de"]
@@ -2355,7 +2389,8 @@ def main(a):
             estado, motivo = "Descartada", f"Salió {edad:g} años después de la importación (más de {PLAZO})"
         elif plazo is None and edad_fab is not None and edad_fab > PLAZO:
             # Sin una DAM que diga cuándo se importó, solo se trabajan máquinas de hasta 4 años
-            estado, motivo = "Descartada", f"Máquina antigua: la guía dice que es del año {fab} ({edad_fab} años al salir, más de {PLAZO})"
+            estado, motivo = "Descartada", ((f"Máquina antigua: según el equipo es del año {fab}" if fab_eq else f"Máquina antigua: la guía dice que es del año {fab}")
+                                            + f" ({edad_fab} años al salir, más de {PLAZO})")
         elif regreso is not None:
             estado, motivo = "Regresó a la ZTE", f"Volvió el {ftx(regreso['f'])} con la guía {regreso['num']} ({regreso['l']['lugar']})"
         else:
@@ -2471,7 +2506,7 @@ def main(a):
             "maq": {"cat": v["maq"]["cat"], "desc": v["maq"]["desc"][:160], "serie": serie, "k": k_m if k_m and k_m in maq_por_k else None},
             "mov": mov, "rec": rec, "ten": ten, "motivo_g": g0["motivo"], "evid": "vigente" if vig else "baja",
             "p": g0["p"]["lugar"], "l": g0["l"]["lugar"], "ubic": ubic, "regreso": {"f": regreso["f"], "guia": regreso["num"], "lugar": regreso["l"]["lugar"]} if regreso is not None else None,
-            "dam": dam, "edad": edad, "fab": fab, "tras": tras, "tras_nota": tras_nota, "cpe": cpe if cpe in casos_cpe else None, "venta": cpe or "",
+            "dam": dam, "edad": edad, "fab": fab, **({"fab_eq": True} if fab_eq else {}), "tras": tras, "tras_nota": tras_nota, "cpe": cpe if cpe in casos_cpe else None, "venta": cpe or "",
             "exportada": c_["exp"] if exportada else "", "cliente": next((r for r in (ten["ruc"], mov["ruc"], rec["ruc"]) if r in cli), None),
             "pruebas": {"serie": bool(serie) or None, "dam": dam["benef"], "plazo": plazo if plazo is not None else (False if (edad_fab or 0) > PLAZO else None), "tras": (not tras) if tras is not None else None, "salida": bool(vig)},
             "recs": recs, "seguir": seguir,
