@@ -229,7 +229,8 @@ def main(r_json, salida, r_previo=None):
         filas_x.append([prio_x, x["id"], x["estado"], f"{x['maq']['cat']}: {x['maq']['desc']}"[:150], x["maq"]["serie"],
                         nombre_ruc(x["mov"]), nombre_ruc(x["rec"]), fecha(x["f"]), x["p"],
                         f"{x['ubic']['lugar']}" + (f" · {x['ubic']['dir']}" if x["ubic"]["dir"] else "") + f" (al {fx(x['ubic']['f'])})",
-                        nums, x["clave"], ("Falta " + "; ".join(x["falta"])) if x["falta"] else x["motivo"], dam_tab])
+                        nums, x["clave"], (("Falta " + "; ".join(x["falta"])) if x["falta"] else x["motivo"])
+                        + "".join(f". {p_}" for p_ in x.get("pasos", []) if p_.startswith("Ojo")), dam_tab])     # avisos: puede que no haya salido
     filas_x.sort(key=lambda r: (r[0], r[1]))
     cols_x = [("Prioridad", 9, "dato"), ("Expediente", 10, "dato"), ("Estado", 16, "dato"), ("Máquina", 40, "dato"), ("Serie de la máquina (guía)", 20, "dato"),
               ("Quién la movió", 32, "dato"), ("Quién la recibió", 32, "dato"), ("Fecha de salida", 12, "dato"), ("Partida", 24, "dato"),
