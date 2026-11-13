@@ -98,6 +98,7 @@ def cat_maquina(desc):
         ("EXCAVADORA", "Excavadora"),
         ("MINICARGADOR", "Minicargador"), ("MINI CARGADOR", "Minicargador"), ("MINI-CARGADOR", "Minicargador"), ("CARGADOR", "Cargador frontal"),
         ("MOTONIVELADORA", "Motoniveladora"), ("RODILLO", "Rodillo compactador"),
+        ("COSECHADORA", "Cosechadora"), ("TRANSPLANTADORA", "Trasplantadora"), ("TRASPLANTADORA", "Trasplantadora"), ("MOTOCULTOR", "Motocultor"),
         ("TRACTOR AGRIC", "Tractor agrícola"), ("BULLDOZER", "Tractor de orugas"),
         ("GRUPO ELECTROGENO", "Grupo electrógeno"), ("MOTOR MARINO", "Motor marino"), ("MOTOR", "Motor diésel"),
         ("MARTILLO", "Martillo hidráulico"), ("RASTRA", "Implemento agrícola"),
@@ -131,8 +132,9 @@ def fstr(x):
 
 
 def claves_dam(x):
-    """Números de DAM escritos a mano («118-2025-10-511887», «235-2017-10 14949») → aduana-año-régimen-número."""
-    return [f"{a}-{b}-{c}-{int(d):06d}" for a, b, c, d in re.findall(r"(\d{3})-(\d{4})-(\d{2})[- ](\d{1,7})", str(x or ""))]
+    """Números de DAM escritos a mano («118-2025-10-511887», «235-2017-10 14949», «118-2025 10-012345», «118-2017-10- 054321»)
+    → aduana-año-régimen-número."""
+    return [f"{a}-{b}-{c}-{int(d):06d}" for a, b, c, d in re.findall(r"(?<!\d)(\d{3})[- ]+(\d{4})[- ]+(\d{2})[- ]+(\d{1,7})(?!\d)", str(x or ""))]
 
 
 def leer_dams(ruta):
@@ -450,6 +452,17 @@ def leer_control_ia(ruta, ruc):
                 x["sin_benef"] += 1
     tr_todos = hoja("Traslados")
     meta["traslados_maq"] = {"total": 0, "anios": "", "solicitantes": 0}
+    # Traslados de cada importador (no solo del importador base): el tablero los muestra en las salidas de sus máquinas
+    meta["tras_imp"] = {}
+    if len(tr_todos) and "Doc_Solicitante" in tr_todos:
+        for _, r in tr_todos.iterrows():
+            ruc_i = txt(r.get("Doc_Solicitante"))
+            if re.fullmatch(r"\d{11}", ruc_i):
+                meta["tras_imp"].setdefault(ruc_i, []).append({
+                    "exp": re.sub(r"\s+", " ", txt(r.get("N_Expediente"))), "f": fecha_celda(r.get("Fecha_Expediente")), "tipo": txt(r.get("Tipo_Traslado")),
+                    "clase": CLASES.get(norm(r.get("Tipo_Mercancia")), "otras"), "cant": num(r.get("Cantidad_Trasladada")),
+                    "dams": claves_dam(r.get("Num_DAM")), "dams_txt": re.sub(r"\s+", " ", txt(r.get("Num_DAM"))),
+                    "series": re.sub(r"\s+", " ", txt(r.get("Series_DAM"))), "res": txt(r.get("Resultado"))})
     if len(tr_todos) and "Tipo_Mercancia" in tr_todos:
         tm = tr_todos[tr_todos.Tipo_Mercancia.map(lambda v: norm(v) in ("MAQUINARIA AMARILLA", "MAQUINARIA AGRICOLA"))]
         am = tm[tm.Tipo_Mercancia.map(lambda v: norm(v) == "MAQUINARIA AMARILLA")]
@@ -719,7 +732,7 @@ def guias_xlsx(ruta):
 
 
 MAQ_GUIA = {"Excavadora", "Retroexcavadora", "Minicargador", "Cargador frontal", "Motoniveladora", "Rodillo compactador",
-            "Tractor de orugas", "Tractor agrícola", "Grupo electrógeno", "Motor marino"}
+            "Tractor de orugas", "Tractor agrícola", "Cosechadora", "Trasplantadora", "Motocultor", "Grupo electrógeno", "Motor marino"}
 NO_ES_MAQ = re.compile(r"\b(1:50|1/50|ESCALA|JUGUETE\w*|MINIATURA\w*|ANFO|BATERIA\w*|CELULAR\w*|NEUMATICO\w*|LLANTA\w*|REPUESTO\w*|"
                        r"XAG|DRON\w*|CHARGER)\b")     # XAG: drones agrícolas (su «cargador» es de baterías)
 PREFIJO_BIEN = re.compile(r"^(\d+\s*(UND|UNIDAD(ES)?|U)?\.?\s+|TRANSPORTE( EN CAMA BAJA)? DE (UNA |UN )?|SERVICIO DE (TRASLADO|TRANSPORTE) DE (UNA |UN )?|"
@@ -834,7 +847,7 @@ def leer_guias(rutas, r_ubi):
                   for n, b in enumerate(t.pop("bien", None) or [], 1) if isinstance(b, dict)]
         campos = campos_excel if campos_excel else plano({**{k: v for k, v in de.items() if k not in SIN_VER and k != "traslado"}, "traslado": t})
         return {"c": campos[:400], "b": bienes}
-    por, meta = {}, {"archivos": [], "busquedas": {}, "cobertura": {}, "no_existen": set()}
+    por, meta = {}, {"archivos": [], "busquedas": {}, "cobertura": {}, "no_existen": set(), "masivos": {}}
     es_iso = lambda x: bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", x))
     for ruta in rutas:
         if ruta.lower().endswith((".xlsx", ".xlsm")):
@@ -873,6 +886,10 @@ def leer_guias(rutas, r_ubi):
                 for rol, k in (("emisor", "rucEmisor"), ("receptor", "rucReceptor")):
                     if b.get(k) and str(b[k]).strip() not in sin_terminar:
                         meta["cobertura"].setdefault(str(b[k]).strip(), {}).setdefault(rol, []).append([de_, ha_])
+            if b.get("tipo") == "bloque_exceso":      # más de 100 guías en un solo día: SUNAT no deja descargar ese día
+                for rol, k in (("emisor", "rucEmisor"), ("receptor", "rucReceptor")):
+                    if b.get(k):
+                        meta["masivos"].setdefault(str(b[k]).strip(), set()).add(rol)
         for b in d.get("busquedas") or []:
             caso = str(b.get("caso") or "").strip()
             if not caso or b.get("grupo") not in ("caso", "citada"):
@@ -2122,8 +2139,9 @@ def main(a):
             else:
                 viajes[-1].append(i)
         maq_ = grupos_s.pop(k_)["maq"]
-        for n_, v in enumerate(viajes):
-            grupos_s[f"{k_}|{n_}"] = {"gs": v, "maq": maq_}
+        for n_, v in enumerate(viajes):         # cada viaje con la descripción de sus propias guías
+            maq_v = next((x for i in v for x in maquinas_guia(i) if x["cat"] == maq_["cat"] and not x["serie"]), maq_)
+            grupos_s[f"{k_}|{n_}"] = {"gs": v, "maq": maq_v}
 
     prov_zte = {}                                                # departamento → provincias que están (casi) enteras en la ZTE
     for (dep_, prov_), z_ in ubi_df.groupby(["departamento", "provincia"]).zona:
@@ -2160,6 +2178,8 @@ def main(a):
         return f"la dirección termina en {', '.join(fin_zte)}, que está en la ZTE" if fin_zte else ""
 
     cob_ruc = (gre_meta or {}).get("cobertura", {})
+    # Emiten más de 100 guías en un día (grandes distribuidores): no se pueden descargar todas sus guías como remitente
+    masivos_em = {r_ for r_, roles_ in ((gre_meta or {}).get("masivos") or {}).items() if "emisor" in roles_}
 
     def cobertura(ruc, desde_iso, rol="emisor"):
         """Parte del periodo [desde, hoy] con guías consultadas del RUC en ese rol (0 a 1) y los tramos consultados."""
@@ -2196,6 +2216,17 @@ def main(a):
         return None
     si_no = lambda v: True if norm(v).startswith("SI") else False if norm(v).startswith("NO") else None
 
+    def nombra(serie, texto):
+        """El texto nombra la serie. Una serie solo de números no puede tener otro dígito pegado: el chasis 1234567 no está
+        dentro de «12345678»."""
+        return serie in codigo(texto) and (not serie.isdigit() or bool(re.search(rf"(?<!\d){serie}(?!\d)", norm(texto))))
+
+    def nombran(serie):
+        """Guías cuyos bienes nombran la serie (de 6 o más caracteres)."""
+        if len(serie) < 6:
+            return set()
+        return {i for i, t in enumerate(g_txt2) if serie in t and (not serie.isdigit() or nombra(serie, " ".join(bienes_de(i))))}
+
     def orden_g(i):
         """Orden de las guías: por fecha y, el mismo día, por emisor, serie y número correlativo (T001-9 antes que T001-10)."""
         se_, _, nu_ = guias[i]["num"].rpartition("-")
@@ -2213,7 +2244,7 @@ def main(a):
                     if f"{c_}|{s_}" in ver_), {})
         serie = serie or ver.get("serie", "")
         # Todas las guías que nombran la serie: para saber dónde quedó y si regresó
-        todas = sorted(set(gs_) | ({i for i, t in enumerate(g_txt2) if serie in t} if len(serie) >= 6 else set()), key=orden_g)
+        todas = sorted(set(gs_) | nombran(serie), key=orden_g)
         post = [i for i in todas if guias[i]["vig"] and guias[i]["f"] >= g0["f"]]
         regreso = next((guias[i] for i in post if guias[i]["p"]["zona"] == "ZTC" and guias[i]["l"]["zona"] == "ZTE"), None)
         g_ult = guias[post[-1]] if post else g0
@@ -2283,7 +2314,7 @@ def main(a):
         plazo = None if edad is None else edad <= PLAZO
         # Año de la máquina según la guía: su descripción o, si no lo dice, los bienes que nombran su serie
         fab = anio_fabricacion([v["maq"]["desc"]], int(g0["f"][:4]) + 1) or (
-            anio_fabricacion([b_ for i in gs_ for b_ in bienes_de(i) if serie in norm(b_)], int(g0["f"][:4]) + 1) if len(serie) >= 6 else None)
+            anio_fabricacion([b_ for i in gs_ for b_ in bienes_de(i) if nombra(serie, b_)], int(g0["f"][:4]) + 1) if len(serie) >= 6 else None)
         edad_fab = int(g0["f"][:4]) - fab if fab else None
         mov, rec = dueno(g0), g0["de"]
         venta_m = norm(g0["motivo"]).startswith("VENTA")
@@ -2297,6 +2328,8 @@ def main(a):
         if ubic["rec"]["ruc"] and ubic["rec"]["ruc"] not in {q["ruc"] for q, _ in quienes}:
             quienes.append((ubic["rec"], "quien la recibió después"))      # la última guía la dejó con otro
         quienes = [(q, rol) for q, rol in quienes if ruc_valido(q["ruc"]) and q["ruc"] != ruc_imp]
+        masivos_q = [q for q, rol in quienes if q["ruc"] in masivos_em]
+        quienes = [(q, rol) for q, rol in quienes if q["ruc"] not in masivos_em]
         seguir = [{"ruc": q["ruc"], "nombre": q["nombre"], "rol": rol} for q, rol in quienes if cobertura(q["ruc"], g0["f"])[0] < 0.9]
         cubiertos = [(q, max((h_ for _, h_ in cobertura(q["ruc"], g0["f"])[1]), default="")) for q, rol in quienes if cobertura(q["ruc"], g0["f"])[0] >= 0.9]
         if mov["ruc"] == ruc_imp and vig and (dam["benef"] is not True or tras is True):
@@ -2351,6 +2384,9 @@ def main(a):
                              "nombra esta máquina: o sigue donde la dejó la última guía o se movió sin guía. Corresponde requerir al tenedor que informe dónde está.")
             if seguir:
                 pasos.append("Para actualizar la ubicación, descargue las guías posteriores de " + " y de ".join(nom(q).rstrip(".") for q in seguir) + " (botón «Seguir la máquina»).")
+            if masivos_q:
+                pasos.append("Las guías de " + " y de ".join(nom(q).rstrip(".") for q in masivos_q) + " no se pueden descargar todas: emite más de 100 por día. "
+                             "Ubique la máquina por su serie en las guías de los transportistas o requiérale que informe dónde está.")
             if estado == "Caso armado":
                 pasos.append("Con la ubicación confirmada, programar la verificación física y el requerimiento al tenedor.")
             duda = duda_direccion(g0) if vig else ""
@@ -2383,19 +2419,42 @@ def main(a):
         if imp_c and estado != "Descartada":
             info_c = next((x_ for x_ in meta_ctl.get("importadores", []) if x_["ruc"] == mov["ruc"]), {})
             antes_ = lambda d_: d_["f"] <= g0["f"] if d_["f"] else d_["dam"].split("-")[1] <= g0["f"][:4]   # sin fecha: el año de su número
-            familia_ = lambda c_: "Cargador" if c_ in ("Minicargador", "Cargador frontal") else c_   # un minicargador se declara a veces como cargadora
+            # Un minicargador se declara a veces como cargadora, y un tractor de orugas agrícola como tractor
+            familia_ = lambda c_: "Cargador" if c_ in ("Minicargador", "Cargador frontal") else "Tractor" if c_ in ("Tractor agrícola", "Tractor de orugas") else c_
             dams_cand = sorted((d_ for d_ in imp_c if familia_(d_["cat"]) == familia_(v["maq"]["cat"]) and antes_(d_)),
                                key=lambda d_: d_["f"] or d_["dam"].split("-")[1], reverse=True)
+            # Traslados a la ZTC que el importador pidió cerca de la salida (de 180 días antes a 30 después), del mismo tipo de maquinaria
+            clases_m = {"Tractor agrícola": {"agricola"}, "Cosechadora": {"agricola"}, "Trasplantadora": {"agricola"}, "Motocultor": {"agricola"},
+                        "Tractor de orugas": {"agricola", "amarilla"}, "Grupo electrógeno": {"otras"}, "Motor marino": {"otras"}}.get(v["maq"]["cat"], {"amarilla"})
+            f0_ = date.fromisoformat(g0["f"])
+            tras_cand = sorted((t_ for t_ in (meta_ctl.get("tras_imp") or {}).get(mov["ruc"], [])
+                                if t_["f"] and norm(t_["tipo"]).startswith("ZTE A ZTC") and t_["clase"] in clases_m
+                                and -180 <= (date.fromisoformat(t_["f"]) - f0_).days <= 30),
+                               key=lambda t_: abs((date.fromisoformat(t_["f"]) - f0_).days)) if tras is None else []
+            extra_ = []
             if dam["benef"] is None:
-                txt_c = (f"{nom(mov).rstrip('.')} figura en el cuaderno de la IA como importador con beneficio ({info_c.get('amarilla', 0)} DAM de maquinaria amarilla, "
-                         f"{info_c.get('tras', 0)} traslados pedidos).")
+                clases_ = [f"{info_c[k]} DAM de maquinaria {n}" for k, n in (("amarilla", "amarilla"), ("agricola", "agrícola")) if info_c.get(k)]
+                n_tr = info_c.get("tras", 0)
+                txt_c = (f"{nom(mov).rstrip('.')} figura en el cuaderno de la IA como importador con beneficio ({' y '.join(clases_) or '0 DAM de maquinaria amarilla'}, "
+                         f"{n_tr} {'traslado pedido' if n_tr == 1 else 'traslados pedidos'}).")
                 if dams_cand:
                     rf_txt = lambda d_: (f" (reconocida el {ftx(d_['rf'])}{', después de la salida' if d_['rf'] > g0['f'] else ''})" if d_.get("rf")
                                          else " (sin reconocimiento físico)")
-                    txt_c += (f" Busque la serie en sus DAM de {'cargadores' if familia_(v['maq']['cat']) == 'Cargador' else v['maq']['cat'].lower()} anteriores a la salida: "
+                    plural_ = {"Cargador": "cargadores", "Tractor": "tractores"}.get(familia_(v["maq"]["cat"]), v["maq"]["cat"].lower())
+                    txt_c += (f" Busque la serie en sus DAM de {plural_} anteriores a la salida: "
                               + ", ".join(d_["dam"] + ("" if d_["benef"] else " (sin beneficio)") + rf_txt(d_) for d_ in dams_cand[:8])
                               + (f" y {len(dams_cand) - 8} más" if len(dams_cand) > 8 else "") + ".")
-                pasos.insert(next((n_ for n_, p_ in enumerate(pasos) if not p_.startswith("Ojo")), len(pasos)), txt_c)   # después de los avisos
+                extra_.append(txt_c)
+            if tras_cand:
+                uni_ = lambda c_: f"{c_:g} {'máquina' if c_ == 1 else 'máquinas'}, " if c_ else ""
+                extra_.append(f"En el cuaderno de traslados, {nom(mov).rstrip('.')} pidió cerca de la salida "
+                              + ("este traslado" if len(tras_cand) == 1 else f"{min(len(tras_cand), 4)} traslados") + " a la ZTC del mismo tipo de maquinaria: "
+                              + "; ".join(f"{t_['exp']} del {ftx(t_['f'])} ({uni_(t_['cant'])}DAM {' y '.join(t_['dams']) or t_['dams_txt'] or 'sin número'}"
+                                          + (f", series {t_['series']}" if t_["series"] else "") + (f"; {t_['res'].lower()}" if t_["res"] else "") + ")"
+                                          for t_ in tras_cand[:4])
+                              + (". Si la máquina está en ese traslado" if len(tras_cand) == 1 else ". Si la máquina está en uno de ellos") + ", su salida tiene autorización.")
+            pos_ = next((n_ for n_, p_ in enumerate(pasos) if not p_.startswith("Ojo")), len(pasos))      # después de los avisos
+            pasos[pos_:pos_] = extra_
         transp = {}
         for i in gs_:
             if guias[i]["tipo"] == "Transportista":
@@ -2411,7 +2470,8 @@ def main(a):
             "recs": recs, "seguir": seguir,
             "transp": [{"ruc": r, "nombre": n_} for r, n_ in transp.items()], "placas": sorted({pl_ for i in gs_ for pl_ in guias[i]["placas"]})[:6],
             "gs": sorted(set(gs_) | set(post), key=orden_g), "ver": bool(ver), "obs": ver.get("obs", ""),
-            "imp_c": bool(imp_c), "dams_cand": [d_["dam"] for d_ in dams_cand[:8]]})
+            "imp_c": bool(imp_c), "dams_cand": [d_["dam"] for d_ in dams_cand[:8]],
+            "tras_cand": [f"{t_['exp']} ({ftx(t_['f'])})" for t_ in tras_cand[:4]] if imp_c and estado != "Descartada" else []})
     ORDEN_S = {"Caso armado": 0, "Indicio: guía dada de baja": 1, "Por completar": 2, "Regresó a la ZTE": 3, "Descartada": 4}
     salidas.sort(key=lambda x: (ORDEN_S[x["estado"]], len(x["falta"]), [-ord(c) for c in x["f"]]))
     # Cada máquina conserva su número de expediente: se toma de la versión anterior (por serie o, sin serie, por sus guías)
@@ -2512,7 +2572,8 @@ def main(a):
         if c["perfil"] in ("Entidad pública", "No domiciliado") or n_sin <= 0:
             pts = min(pts, 1) if not sal_c else pts
         c["cob"], c["cob_t"] = cobertura(doc, c["primera"]) if ruc_valido(doc) else (None, [])
-        c.update({"riesgo": pts, "porque": por, "frontera": frontera, "n_sin": n_sin, "salidas": [x["id"] for x in sal_c], "gre_ok": ruc_valido(doc)})
+        c.update({"riesgo": pts, "porque": por, "frontera": frontera, "n_sin": n_sin, "salidas": [x["id"] for x in sal_c], "gre_ok": ruc_valido(doc),
+                  **({"masivo": True} if doc in masivos_em else {})})
 
     # ---------- Comprobantes por descargar 4 a 6: ventas de maquinaria sin serie enlazada ----------
     # La factura detallada (XML) trae la serie: dice qué máquina compró cada cliente, aunque la venta no tenga indicios
@@ -2645,7 +2706,8 @@ def main(a):
                      "por": "Para armar el caso hay que ubicar la máquina. Las guías posteriores de quien la tiene muestran si se movió otra vez o si regresó.",
                      "busquedas": seg})
     # 3. Tenedores con más riesgo y sin guías consultadas
-    top = sorted((c for c in cli.values() if c["gre_ok"] and c["riesgo"] >= 4 and (c["cob"] or 0) < 0.8), key=lambda c: (-c["riesgo"], -c["n_sin"], c["primera"]))[:15]
+    top = sorted((c for c in cli.values() if c["gre_ok"] and not c.get("masivo") and c["riesgo"] >= 4 and (c["cob"] or 0) < 0.8),
+                 key=lambda c: (-c["riesgo"], -c["n_sin"], c["primera"]))[:15]
     if top:
         cola.append({"id": "tenedores", "t": "Guías de los tenedores con más riesgo", "n": len(top), "u": "RUC por consultar",
                      "por": "Compradores que más probablemente muevan la máquina fuera de la zona (frontera, alquiler, constructoras, domicilio en la ZTC) y cuyas guías "

@@ -1773,9 +1773,10 @@ function fichaCliente(cl) {
     ["Puntaje", `<span class="riesgo ${(cl.riesgo || 0) >= 4 ? "a" : (cl.riesgo || 0) >= 2 ? "m" : ""}">${f0(cl.riesgo || 0)}</span> ${esc((cl.porque || []).join("; ") || "sin indicios")}`],
     ["Perfil", esc(cl.perfil || "")], ["Máquinas sin IGV", f0(cl.n_sin || 0)],
     ["Salidas", (cl.salidas || []).map(id => `<a href="#salidas" data-salida="${esc(id)}">${esc(id)}</a> ${estSalH(IDX.sal.get(id) || { estado: "" })}`).join("<br>")],
-    ["Guías consultadas", !cl.gre_ok ? "No tiene RUC para consultar guías" : tramos ? `${Math.round((cl.cob || 0) * 100)} % del tiempo desde la compra: ${esc(tramos)}` : "Ninguna como remitente desde la compra"],
+    ["Guías consultadas", !cl.gre_ok ? "No tiene RUC para consultar guías" : cl.masivo ? "Emite más de 100 guías por día: SUNAT no deja descargarlas todas" : tramos ? `${Math.round((cl.cob || 0) * 100)} % del tiempo desde la compra: ${esc(tramos)}` : "Ninguna como remitente desde la compra"],
   ], { clase: (cl.riesgo || 0) >= 4 ? "alerta" : "" });
-  if (cl.gre_ok) br.append(el("div", { class: "ficha-acc", html: `<button class="btn claro" type="button" data-lista-ruc="${esc(cl.ruc)}" data-lista-nombre="${esc(cl.nombre)}" data-lista-desde="${esc(isoMas(cl.primera, -3))}" data-lista-grupo="tenedor">${ic("camion")}Buscar sus guías desde la compra</button>` }));
+  if (cl.gre_ok && cl.masivo) br.append(el("p", { class: "nota" }, "No conviene descargar todas sus guías: emite más de 100 por día. Ubique sus máquinas por la serie en las guías de los transportistas y del importador, o requiérale que informe dónde están."));
+  if (cl.gre_ok && !cl.masivo) br.append(el("div", { class: "ficha-acc", html: `<button class="btn claro" type="button" data-lista-ruc="${esc(cl.ruc)}" data-lista-nombre="${esc(cl.nombre)}" data-lista-desde="${esc(isoMas(cl.primera, -3))}" data-lista-grupo="tenedor">${ic("camion")}Buscar sus guías desde la compra</button>` }));
   b.append(br);
   const filas = cl.cpes.map(cpe => {
     const v = IDX.venta.get(cpe), c = IDX.caso.get(cpe);
@@ -1795,7 +1796,7 @@ function vistaClientes(sec) {
     c.rev ? "rev" : "", c.nuevo ? "nuevo" : "", c.no_habido ? "nohab" : "", c.n_igv ? "igv" : ""].filter(Boolean);
   const filas = Object.values(D.clientes).map(c => ({ ...c, mk: mk(c) }));
   const nivelR = c => (c.riesgo || 0) >= 4 ? "Alto (4 o más)" : (c.riesgo || 0) >= 2 ? "Medio (2 o 3)" : "Bajo (0 o 1)";
-  const cobT = c => !c.gre_ok ? "Sin RUC para consultar" : (c.cob || 0) >= 0.8 ? "Consultadas" : (c.cob || 0) > 0 ? "En parte" : "Sin consultar";
+  const cobT = c => !c.gre_ok ? "Sin RUC para consultar" : c.masivo ? "Demasiadas para descargar" : (c.cob || 0) >= 0.8 ? "Consultadas" : (c.cob || 0) > 0 ? "En parte" : "Sin consultar";
   t.append(leyendaMarcas(["ztc", "zte", "ext", "pub", "pn", "rev", "nuevo", "nohab", "igv"]));
   const resumenCli = rs => `<span class="der"><span class="etq">${rs.length} ${rs.length === 1 ? "comprador" : "compradores"}</span><span class="sub-g">${f0(rs.reduce((a, r) => a + r.n, 0))} ventas</span>` +
     (rs.some(r => r.alta) ? `${NIVEL("Alta")} ${rs.reduce((a, r) => a + r.alta, 0)}` : "") + (rs.some(r => r.media) ? ` ${NIVEL("Media")} ${rs.reduce((a, r) => a + r.media, 0)}` : "") + `</span>`;
@@ -1811,7 +1812,7 @@ function vistaClientes(sec) {
         csv: r => `${r.riesgo || 0} (${(r.porque || []).join("; ")})` },
       { k: "nombre", t: "Tenedor", largo: 1 },
       { t: "Por qué", v: r => (r.porque || []).join("; "), largo: 1 },
-      { t: "Guías", v: r => r.gre_ok ? (r.cob || 0) : -1, h: r => !r.gre_ok ? "–" : `<span class="etq ${(r.cob || 0) >= 0.8 ? "ok" : (r.cob || 0) > 0 ? "pend" : ""}">${Math.round((r.cob || 0) * 100)} %</span>`, csv: r => cobT(r) },
+      { t: "Guías", v: r => r.gre_ok ? (r.cob || 0) : -1, h: r => !r.gre_ok ? "–" : r.masivo ? `<span class="etq" title="Emite más de 100 guías por día">Demasiadas</span>` : `<span class="etq ${(r.cob || 0) >= 0.8 ? "ok" : (r.cob || 0) > 0 ? "pend" : ""}">${Math.round((r.cob || 0) * 100)} %</span>`, csv: r => cobT(r) },
       { t: "Indicadores", v: r => marcasT(r.mk).join("; "), h: r => marcasH(r.mk) },
       { k: "ruc", t: "RUC / doc.", c: 1 }, { k: "perfil", t: "Perfil" },
       { k: "zona", t: "Zona", h: r => zonaH(r.zona), v: r => zonaT(r.zona) }, { k: "lugar", t: "Domicilio fiscal", largo: 1 },

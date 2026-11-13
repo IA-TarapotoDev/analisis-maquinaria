@@ -226,6 +226,8 @@ def main(r_json, salida, r_previo=None):
         prio_x = 1 if x.get("imp_c") and x["estado"] == "Por completar" else PRIO_X.get(x["estado"], 3)   # la movió otro importador con beneficio
         dam_tab = ((x["dam"]["dam"] + (" serie " + x["dam"]["serie"] if x["dam"]["serie"] else "")) if x["dam"]["fuente"] not in ("", "Verificación del equipo")
                    else ("Revisar las DAM del importador: " + ", ".join(x["dams_cand"])) if x.get("dams_cand") and x["dam"]["benef"] is None else "")
+        if x.get("tras_cand"):              # traslados que pidió ese importador cerca de la salida: la máquina puede estar en uno
+            dam_tab = (dam_tab + ". " if dam_tab else "") + "Traslados del importador cerca de la salida: " + ", ".join(x["tras_cand"])
         filas_x.append([prio_x, x["id"], x["estado"], f"{x['maq']['cat']}: {x['maq']['desc']}"[:150], x["maq"]["serie"],
                         nombre_ruc(x["mov"]), nombre_ruc(x["rec"]), fecha(x["f"]), x["p"],
                         f"{x['ubic']['lugar']}" + (f" · {x['ubic']['dir']}" if x["ubic"]["dir"] else "") + f" (al {fx(x['ubic']['f'])})",
