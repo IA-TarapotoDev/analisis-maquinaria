@@ -92,13 +92,16 @@ def norm(s):
 
 def cat_maquina(desc):
     # «extractor» no es un tractor; el turbocargador y los rodillos inferiores o superiores del tren de rodaje son repuestos
-    d = re.sub(r"\b(?:EXTRACTOR\w*|TURBO\s*CARGADOR\w*|RODILLOS?\s*(?:INF(?:ERIOR(?:ES)?)?|SUP(?:ERIOR(?:ES)?)?)\b)", " ", norm(desc))
+    # el camión grúa es un vehículo, y la grúa de taller, una herramienta
+    d = re.sub(r"\b(?:EXTRACTOR\w*|TURBO\s*CARGADOR\w*|RODILLOS?\s*(?:INF(?:ERIOR(?:ES)?)?|SUP(?:ERIOR(?:ES)?)?)\b|CAMION(?:ES)?\s+GRUA\w*"
+               r"|GRUA\w*\s+(?:HIDRAULICA\s+)?(?:PLEGABLE|PARA\s+(?:TALLER|MOTOR\w*)|DE\s+TALLER))", " ", norm(desc))
     reglas = [
         ("RETROEXCAVADORA", "Retroexcavadora"), ("RETRO EXCAVADORA", "Retroexcavadora"), ("RETRO-EXCAVADORA", "Retroexcavadora"),
         ("EXCAVADORA", "Excavadora"),
         ("MINICARGADOR", "Minicargador"), ("MINI CARGADOR", "Minicargador"), ("MINI-CARGADOR", "Minicargador"), ("CARGADOR", "Cargador frontal"),
         ("MOTONIVELADORA", "Motoniveladora"), ("RODILLO", "Rodillo compactador"),
         ("COSECHADORA", "Cosechadora"), ("TRANSPLANTADORA", "Trasplantadora"), ("TRASPLANTADORA", "Trasplantadora"), ("MOTOCULTOR", "Motocultor"),
+        ("AUTOHORMIGONERA", "Autohormigonera"), ("GRUA", "Grúa"), ("MAQUINA PERFORADORA", "Perforadora"),
         ("TRACTOR AGRIC", "Tractor agrícola"), ("BULLDOZER", "Tractor de orugas"),
         ("GRUPO ELECTROGENO", "Grupo electrógeno"), ("MOTOR MARINO", "Motor marino"), ("MOTOR", "Motor diésel"),
         ("MARTILLO", "Martillo hidráulico"), ("RASTRA", "Implemento agrícola"),
@@ -760,7 +763,8 @@ def guias_xlsx(ruta):
 
 
 MAQ_GUIA = {"Excavadora", "Retroexcavadora", "Minicargador", "Cargador frontal", "Motoniveladora", "Rodillo compactador",
-            "Tractor de orugas", "Tractor agrícola", "Cosechadora", "Trasplantadora", "Motocultor", "Grupo electrógeno", "Motor marino"}
+            "Tractor de orugas", "Tractor agrícola", "Cosechadora", "Trasplantadora", "Motocultor", "Autohormigonera", "Grúa", "Perforadora",
+            "Grupo electrógeno", "Motor marino"}
 NO_ES_MAQ = re.compile(r"\b(1:50|1/50|ESCALA|JUGUETE\w*|MINIATURA\w*|ANFO|BATERIA\w*|CELULAR\w*|NEUMATICO\w*|LLANTA\w*|REPUESTO\w*|"
                        r"XAG|DRON\w*|CHARGER)\b")     # XAG: drones agrícolas (su «cargador» es de baterías)
 PREFIJO_BIEN = re.compile(r"^(\d+\s*(UND|UNIDAD(ES)?|U)?\.?\s+|TRANSPORTE( EN CAMA BAJA)? DE (UNA |UN )?|SERVICIO DE (TRASLADO|TRANSPORTE) DE (UNA |UN )?|"
@@ -791,8 +795,8 @@ def maquinas_en_bienes(bienes):
         n = norm(b)
         n2 = PREFIJO_BIEN.sub("", n)
         cat = cat_maquina(" ".join(n2.split()[:2]))
-        if cat in ("Tractor agrícola", "Tractor de orugas"):
-            cat = cat_maquina(n2)            # si es agrícola o de orugas se ve en el resto de la descripción
+        if cat in ("Tractor agrícola", "Tractor de orugas", "Grúa"):
+            cat = cat_maquina(n2)            # agrícola o de orugas, o grúa de taller: se ve en el resto de la descripción
         if cat not in MAQ_GUIA or NO_ES_MAQ.search(n):
             continue
         m = SERIE_ROTULO.search(n)
@@ -2406,6 +2410,12 @@ def main(a):
         if mov["ruc"] == ruc_imp and vig and (dam["benef"] is not True or tras is True):
             # envío del propio importador sin beneficio confirmado (o con traslado): lo que falta no es ubicar la máquina
             seguir, cubiertos = [], []
+        # Guías vigentes posteriores que mueven la misma máquina dentro de la ZTE. Si el transportista la llevó dentro de la ZTE
+        # en esos días y no hay guía de transportista hacia la ZTC, la guía a la ZTC probablemente no se usó.
+        dentro = [guias[i] for i in post if i not in gs_ and guias[i]["p"]["zona"] == "ZTE" and guias[i]["l"]["zona"] == "ZTE"] if vig else []
+        transp_zte = [x_ for x_ in dentro if x_["tipo"] == "Transportista" and (date.fromisoformat(x_["f"]) - date.fromisoformat(g0["f"])).days <= 3]
+        if any(guias[i]["tipo"] == "Transportista" for i in gs_):
+            transp_zte = []
         # Estado del expediente
         falta, pasos = [], []
         if dam["benef"] is False:
@@ -2437,6 +2447,8 @@ def main(a):
                 falta.append("la fecha de la DAM, para medir los 4 años")
             if tras is None:
                 falta.append("confirmar que no hay solicitud de traslado")
+            if transp_zte:
+                falta.append(f"confirmar que salió: el transportista la llevó a {transp_zte[-1]['l']['lugar']} (ZTE)")
             estado = "Caso armado" if not falta else "Indicio: guía dada de baja" if not vig else "Por completar"
             motivo = ("Con beneficio, sin solicitud de traslado y dentro de los 4 años: ubicar y verificar la máquina" if not falta else "Falta " + "; ".join(falta))
             if not serie:
@@ -2469,8 +2481,20 @@ def main(a):
                 pasos.insert(0, f"Ojo: el distrito de llegada de la guía es {g0['l']['lugar']} (ZTC), pero {duda}. "
                                 "El distrito puede estar mal puesto y la máquina no haber salido: confirmarlo antes de seguir.")
             # Después de la guía a la ZTC, otra guía vigente mueve la misma máquina dentro de la ZTE: o no salió o volvió sin guía
-            dentro = [guias[i] for i in post if i not in gs_ and guias[i]["p"]["zona"] == "ZTE" and guias[i]["l"]["zona"] == "ZTE"] if vig else []
-            if dentro:
+            if transp_zte:
+                t_ = transp_zte[-1]
+                dias_ = (date.fromisoformat(t_["f"]) - date.fromisoformat(g0["f"])).days
+                cuando = "el mismo día" if dias_ == 0 else f"{dias_} {'día' if dias_ == 1 else 'días'} después"
+                emps_ = list(dict.fromkeys(nom(x_["em"]).rstrip(".") for x_ in transp_zte))
+                y_ = lambda xs: " y ".join(", ".join(xs).rsplit(", ", 1))
+                placas_ = sorted({p_ for x_ in transp_zte for p_ in x_["placas"]})
+                pasos.insert(0, f"Ojo: {cuando}, " + (f"el transportista {emps_[0]} llevó" if len(emps_) == 1 else f"los transportistas {y_(emps_)} llevaron")
+                                + f" la máquina de {t_['p']['lugar']} a {t_['l']['lugar']} (ZTE)"
+                                + (f", para {nom(t_['de']).rstrip('.')}" if t_["de"]["ruc"] or t_["de"]["nombre"] else "")
+                                + f" ({'guía' if len(transp_zte) == 1 else 'guías'} {y_([x_['num'] for x_ in transp_zte])}"
+                                + (f", placas {', '.join(placas_)}" if placas_ else "")
+                                + "), y no hay guía de transportista hacia la ZTC. La guía a la ZTC probablemente no se usó: confirmar que la máquina salió antes de seguir.")
+            elif dentro:
                 g_ = dentro[-1]
                 dias_ = (date.fromisoformat(dentro[0]["f"]) - date.fromisoformat(g0["f"])).days
                 nums_ = " y ".join(", ".join(x_["num"] for x_ in dentro).rsplit(", ", 1))
