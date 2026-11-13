@@ -2380,9 +2380,12 @@ def main(a):
         falta, pasos = [], []
         if dam["benef"] is False:
             fuente_ = dam["fuente"] or ""
-            estado, motivo = "Descartada", "Sin beneficio: " + ("la DAM no está acogida al beneficio (verificación del equipo)" if fuente_ == "Verificación del equipo"
-                                                               else "importada sin el beneficio" if not fuente_ or fuente_.startswith("DAM del importador")
-                                                               else fuente_[0].lower() + fuente_[1:])
+            estado, motivo = "Descartada", "Sin beneficio: " + (
+                "la DAM no está acogida al beneficio (verificación del equipo)" if fuente_.startswith("Verificación del equipo")
+                else "la DAM no está acogida al beneficio según el cuaderno de la IA" + (f" ({dam['res_ia'].lower()})" if dam.get("res_ia") else "")
+                if fuente_ == "Cuaderno de la IA"
+                else "importada sin el beneficio" if not fuente_ or fuente_.startswith("DAM del importador")
+                else fuente_[0].lower() + fuente_[1:])
         elif tras is True:
             estado, motivo = "Descartada", tras_nota
         elif plazo is False:
