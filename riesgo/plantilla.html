@@ -1338,6 +1338,8 @@ function fichaSalida(x) {
       : d.benef === true ? `Con beneficio (falta el número de la DAM)${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}`
       : "Aún no se conoce la DAM de esta máquina",
     plazo: x.edad == null ? "Falta la fecha de la DAM" + (x.fab ? `. ${x.fab_eq ? "Según el equipo, la máquina" : "La guía dice que la máquina"} es del año ${esc(x.fab)}` + (edadFab(x) > 0 ? `: tenía ${f0(edadFab(x))} ${edadFab(x) === 1 ? "año" : "años"} al salir` : ", el mismo de la salida") : "") : (d.f && d.f.length <= 7 ? `Importada en ${esc(fechaDam(d.f))}; salió en ${esc(x.f.slice(0, 4))}`
+        : x.edad < 0.1 ? "Salió menos de un mes después de la importación"
+        : x.edad < 1 ? `Salió ${Math.max(1, Math.round(x.edad * 12))} ${Math.max(1, Math.round(x.edad * 12)) === 1 ? "mes" : "meses"} después de la importación`
         : `Salió ${NF1.format(x.edad)} ${x.edad === 1 ? "año" : "años"} después de la importación`)
         + (anioDam(x) != null ? `. Los 4 años van de ${anioDam(x)} a ${anioDam(x) + 3}${fueraPlazo(x) ? ": salió después" : ""}` : ""),
     tras: esc(x.tras_nota || (x.tras == null ? "Sin confirmar" : "")),

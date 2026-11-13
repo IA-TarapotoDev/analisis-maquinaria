@@ -244,9 +244,9 @@ def main(r_json, salida, r_previo=None):
               ("Última ubicación conocida", 44, "dato"), ("Guías", 26, "dato"), ("Guía principal (clave)", 26, "dato"), ("Qué falta", 40, "dato"),
               ("DAM según el tablero", 22, "dato"),
               ("Serie (si la guía no la trae)", 20, "llenar"), ("DAM", 20, "llenar"), ("Serie de la DAM", 9, "llenar"), ("Año o fecha de la DAM", 13, "llenar"), ("Año de la máquina", 10, "llenar"),
-              ("Importador", 28, "llenar"), ("¿Con beneficio?", 11, "llenar"), ("¿Tiene solicitud de traslado?", 12, "llenar"),
+              ("Importador", 28, "llenar"), ("Intendencia de la DAM", 14, "llenar"), ("¿Con beneficio?", 11, "llenar"), ("¿Tiene solicitud de traslado?", 12, "llenar"),
               ("Expediente de traslado", 22, "llenar"), ("Ubicación verificada (dirección y fecha)", 36, "llenar"), ("Observaciones", 40, "llenar")]
-    listas_x = {"¿Con beneficio?": "si_no", "¿Tiene solicitud de traslado?": "si_no"}
+    listas_x = {"¿Con beneficio?": "si_no", "¿Tiene solicitud de traslado?": "si_no", "Intendencia de la DAM": "intendencia"}
 
     # ---------- Libro ----------
     wb = Workbook()
@@ -289,7 +289,9 @@ def main(r_json, salida, r_previo=None):
          "la fecha, el importador, el beneficio y si tiene solicitud de traslado. Con «Sí» en beneficio y «No» en traslado, y la salida dentro "
          "de los 4 años (por año calendario: el de la DAM y los 3 siguientes; con DAM de 2022, hasta 2025), el expediente pasa a caso armado. "
          "La fecha de la DAM puede ser completa, mes y año (06/2022) o solo el año. Si conoce el año de la máquina (fabricación o modelo), "
-         "anótelo en «Año de la máquina»: sin DAM conocida, cuenta ese año, y pasados los 4 años la salida se descarta.", f()),
+         "anótelo en «Año de la máquina»: sin DAM conocida, cuenta ese año, y pasados los 4 años la salida se descarta. Si la DAM es de otra "
+         "intendencia (Pucallpa, Iquitos…), anótelo en «Intendencia de la DAM»: su solicitud de traslado se confirma allí, y el tablero no la "
+         "da por inexistente porque no figure en el cuaderno de Tarapoto.", f()),
         ("", None),
         ("Leyenda", f(size=12, bold=True)),
     ]

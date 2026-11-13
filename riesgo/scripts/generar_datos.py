@@ -577,7 +577,8 @@ def leer_consultas(ruta):
                   "serie_dam": txt(r.get("Serie de la DAM")).split(".")[0], "f_dam": anio_o_fecha(r.get("Año o fecha de la DAM")), "imp": txt(r.get("Importador")),
                   "benef": txt(r.get("¿Con beneficio?")), "tras": txt(r.get("¿Tiene solicitud de traslado?")), "exp": txt(r.get("Expediente de traslado")),
                   "ubic": txt(r.get("Ubicación verificada (dirección y fecha)")), "obs": txt(r.get("Observaciones")),
-                  "fab": (re.findall(r"(?:19|20)\d{2}", txt(r.get("Año de la máquina"))) or [""])[0]}
+                  "fab": (re.findall(r"(?:19|20)\d{2}", txt(r.get("Año de la máquina"))) or [""])[0],
+                  "intendencia": txt(r.get("Intendencia de la DAM"))}
         if clave and any(campos.values()):
             out["salidas"][f"{clave}|{serie_g}"] = campos
     for r in filas("DAM 2024 de traslados"):
@@ -2341,6 +2342,13 @@ def main(a):
                              else "Sin solicitud de traslado") + " (verificación del equipo)"
         # Una DAM del cuaderno de la IA (anotada por el equipo o deducida): fecha, importador, beneficio y traslado salen del cuaderno
         c_dam = (meta_ctl.get("dam_idx") or {}).get(dam["dam"]) if dam["dam"] and not k_m else None
+        # DAM de otra intendencia según el equipo: su traslado se pide allí, el cuaderno de Tarapoto no basta para descartarlo
+        int_dam = (ver.get("intendencia") or "").strip()
+        de_otra = bool(int_dam) and norm(int_dam).replace("IA ", "") != "TARAPOTO"
+        nota_otra = (f"La DAM es de {'la IA ' + int_dam if not norm(int_dam).startswith('SIN') else 'otra intendencia'} (verificación del equipo): "
+                     "la solicitud de traslado se confirma con esa intendencia") if de_otra else ""
+        if de_otra and tras is None and not c_dam:
+            tras_nota = nota_otra
         if c_dam:
             if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", dam["f"] or "") and c_dam["f"]:
                 dam["f"] = c_dam["f"]
@@ -2356,6 +2364,8 @@ def main(a):
                     tras_nota = ("El cuaderno de la IA tiene " + ("el traslado " if len(t_dam) == 1 else "los traslados ")
                                  + ", ".join(f"{t_['exp']} del {ftx(t_['f'])}" + (f" (series {t_['series']})" if t_["series"] else "") for t_ in t_dam[:4])
                                  + " para esa DAM: confirmar si incluye esta máquina")
+                elif de_otra:
+                    tras_nota = nota_otra + "; en el cuaderno de la IA Tarapoto no figura"
                 elif circ and circ != "IA TARAPOTO":
                     tras_nota = f"No figura en el cuaderno de Tarapoto, pero la máquina partió de la circunscripción de la {circ}: confirmar ahí"
                 else:
