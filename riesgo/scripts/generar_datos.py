@@ -590,6 +590,20 @@ def leer_consultas(ruta):
 
 # ---------------------------------------------------------------- domicilio fiscal y actividad
 
+def benef_texto(v):
+    """Lo que anota el equipo sobre el beneficio de la Ley 27037 (o un «Sí»/«No») → True, False o None si no dice nada.
+    Sin beneficio es lo mismo que no acogida, no desgravada, sin código liberatorio 4438 o sin solicitud: nunca se desgravó
+    ni se devolvió el IGV, y la máquina puede circular fuera de la ZTE. «Sin» empieza como «Si»: lo negativo se mira primero."""
+    t = norm(v)
+    if not t:
+        return None
+    if re.match(r"(NO|SIN|NUNCA|NINGUNA?|IMPROCEDENTE)\b", t) or re.search(r"\b(NO|SIN) (ACOGI|DESGRAV|BENEFICIO|CODIGO|LIBERATORIO|SOLICITUD)", t):
+        return False
+    if re.match(r"(SI|CON|ACOGIDA?|DESGRAVADA?|PROCEDENTE|CONFORME)\b", t):
+        return True
+    return None
+
+
 def ruc_valido(ruc):
     """RUC peruano: prefijo 10, 15, 16, 17 o 20 y dígito verificador (módulo 11)."""
     if not re.fullmatch(r"(10|15|16|17|20)\d{9}", ruc or ""):
@@ -1578,11 +1592,11 @@ def main(a):
             nivel, estado = "Media", "Traslado probable: confirmar la serie"
         elif salida and ext:
             r_ = norm(ext["resultado"])
-            if r_.startswith(("IMPORTADA POR OTRO", "COMPRA LOCAL")) and v.igv > 0 and (r_.startswith("COMPRA LOCAL") or norm(ext["modalidad"]).startswith("SIN DESGRAVACION")):
+            if r_.startswith(("IMPORTADA POR OTRO", "COMPRA LOCAL")) and v.igv > 0 and (r_.startswith("COMPRA LOCAL") or benef_texto(ext["modalidad"]) is False):
                 nivel, estado = "Baja", f"Coherente: {ext['resultado'].lower()} sin beneficio y vendida con IGV (según la consulta)"
             elif r_.startswith(("IMPORTADA POR OTRO", "COMPRA LOCAL")):
                 nivel, estado = "Media", f"Serie ubicada: {ext['resultado'].lower()} (sin beneficio de este importador)"
-            elif r_.startswith("DAM ENCONTRADA") and norm(ext["modalidad"]).startswith("SIN DESGRAVACION"):
+            elif r_.startswith("DAM ENCONTRADA") and benef_texto(ext["modalidad"]) is False:
                 nivel, estado = "Baja", "Coherente: importada sin beneficio (según la consulta)"
             elif r_.startswith("DAM ENCONTRADA"):
                 nivel, estado = "Alta", f"DAM ubicada en la consulta: {ext['dam'] or 's/n'}" + (f" ({ext['intendencia']})" if ext["intendencia"] else "")
@@ -2233,7 +2247,7 @@ def main(a):
         if re.fullmatch(r"\d{4}", (f_dam or "")[:4]) and len(f_dam) <= 7:
             return float(int(f_sal[:4]) - int(f_dam[:4]))
         return None
-    si_no = lambda v: True if norm(v).startswith("SI") else False if norm(v).startswith("NO") else None
+    si_no = benef_texto            # «Sin beneficio», «No acogida», «Sin solicitud»… son «No»; «Sin» no es «Sí»
 
     def nombra(serie, texto):
         """El texto nombra la serie. Una serie solo de números no puede tener otro dígito pegado: el chasis 1234567 no está
@@ -2290,7 +2304,7 @@ def main(a):
             ext = cons["series"].get(cpe) if cpe else None
             if ext:
                 r_ = norm(ext["resultado"])
-                sin_d = norm(ext["modalidad"]).startswith("SIN DESGRAVACION")
+                sin_d = benef_texto(ext["modalidad"]) is False          # sin desgravación, no acogida, sin código liberatorio…
                 if r_.startswith("DAM ENCONTRADA"):
                     dam = {"dam": ext["dam"], "serie": ext["serie"], "f": (re.findall(r"\d{3}-(\d{4})-", ext["dam"]) or [""])[0], "imp": m.NOM_RAZONSOCIAL.iloc[0],
                            "benef": not sin_d, "fuente": "Consulta del equipo" + (f" ({ext['intendencia']})" if ext["intendencia"] else "")}

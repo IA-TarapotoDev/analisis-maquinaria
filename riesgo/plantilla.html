@@ -1329,7 +1329,10 @@ function fichaSalida(x) {
   const det = {
     serie: x.maq.serie ? `Serie ${copiable(x.maq.serie)}` : "La guía no indica la serie",
     dam: d.dam || d.f ? `${d.dam ? "DAM " + copiable(d.dam) + (d.serie ? " serie " + esc(d.serie) : "") : "DAM de " + esc(d.f) + " (falta el número)"}${d.f && d.dam ? " · " + (d.f.length > 4 ? fecha(d.f) : esc(d.f)) : ""}` +
-      `${d.imp ? " · " + esc(d.imp) : ""}${d.benef === true ? " · con beneficio" : d.benef === false ? " · sin beneficio" : ""}${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}` : "Aún no se conoce la DAM de esta máquina",
+      `${d.imp ? " · " + esc(d.imp) : ""}${d.benef === true ? " · con beneficio" : d.benef === false ? " · sin beneficio" : ""}${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}`
+      : d.benef === false ? `Sin beneficio: no acogida a la Ley 27037, puede circular fuera de la ZTE (no se anotó el número de la DAM)${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}`
+      : d.benef === true ? `Con beneficio (falta el número de la DAM)${d.fuente ? ` <span class="etq">${esc(d.fuente)}</span>` : ""}`
+      : "Aún no se conoce la DAM de esta máquina",
     plazo: x.edad == null ? "Falta la fecha de la DAM" + (x.fab ? `. ${x.fab_eq ? "Según el equipo, la máquina" : "La guía dice que la máquina"} es del año ${esc(x.fab)}` + (edadFab(x) > 0 ? `: tenía ${f0(edadFab(x))} ${edadFab(x) === 1 ? "año" : "años"} al salir` : ", el mismo de la salida") : "") : d.f && d.f.length === 4 ? `Importada en ${esc(d.f)}; salió en ${esc(x.f.slice(0, 4))}`
       : `Salió ${NF1.format(x.edad)} ${x.edad === 1 ? "año" : "años"} después de la importación`,
     tras: esc(x.tras_nota || (x.tras == null ? "Sin confirmar" : "")),
@@ -1367,7 +1370,8 @@ function vistaSalidas(sec) {
   const S = D.kpi.salidas || {}, n = e => S[e] || 0;
   sec.append(el("h2", {}, "Salidas detectadas"),
     el("p", { class: "nota" }, "Cada fila es una máquina que una guía de remisión lleva de la ZTE a la ZTC, sea del importador, del comprador o de un tercero. " +
-      "El expediente junta las pruebas: serie, DAM con beneficio, 4 años o menos, sin solicitud de traslado y guía vigente. Lo que el tablero no puede saber se completa en el Excel de consultas, hoja «Salidas por verificar»."));
+      "El expediente junta las pruebas: serie, DAM con beneficio, 4 años o menos, sin solicitud de traslado y guía vigente. Lo que el tablero no puede saber se completa en el Excel de consultas, hoja «Salidas por verificar». " +
+      "Sin beneficio (no acogida, no desgravada, sin código liberatorio 4438 o sin solicitud) quiere decir que nunca se desgravó ni se devolvió el IGV de la Ley 27037: la máquina puede circular fuera de la ZTE y la salida se descarta."));
   const ks = el("div", { class: "kpis" });
   ks.append(kpi(`<span class="etq alerta">Caso armado</span>`, f0(n("Caso armado")), "falta ubicar y verificar"),
     kpi(`<span class="etq pend">Por completar</span>`, f0(n("Por completar") + n("Indicio: guía dada de baja")), n("Indicio: guía dada de baja") ? `${f0(n("Indicio: guía dada de baja"))} con guía dada de baja` : "falta una o más pruebas"),

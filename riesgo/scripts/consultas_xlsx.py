@@ -282,7 +282,9 @@ def main(r_json, salida, r_previo=None):
         ("5. Devuelva el archivo completado por el chat del tablero, no por el repositorio. El tablero lo incorpora: la ficha de "
          "cada máquina mostrará el control de su DAM, y los casos se confirman o se descartan.", f()),
         ("6. Hoja «Salidas por verificar» (la primera): cada fila es una máquina que una guía lleva de la ZTE a la ZTC. Busque su serie en el "
-         "sistema y anote la DAM, el importador, si tiene el beneficio y si tiene solicitud de traslado. El año se toma del número de la DAM "
+         "sistema y anote la DAM, el importador, si tiene el beneficio y si tiene solicitud de traslado. En «¿Con beneficio?» elija «No» si la DAM "
+         "no está acogida a la Ley 27037 (no desgravada, sin código liberatorio 4438 o sin solicitud): nunca se desgravó ni se devolvió el IGV, "
+         "la máquina puede circular fuera de la ZTE y el expediente se descarta. El año se toma del número de la DAM "
          "(118-2024-10-…): anote la fecha solo si la tiene. Si la DAM está en el cuaderno de la IA Tarapoto, basta su número: el tablero completa "
          "la fecha, el importador, el beneficio y si tiene solicitud de traslado. Con «Sí» en beneficio y «No» en traslado, y 4 años o menos "
          "desde la importación, el expediente pasa a caso armado. Si conoce el año de la máquina (fabricación o modelo), anótelo en «Año de la "
