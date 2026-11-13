@@ -1390,7 +1390,7 @@ function vistaSalidas(sec) {
       { k: "motivo", t: "Qué falta o por qué se descarta", largo: 1 },
       { t: "Última ubicación", v: r => r.ubic.f, largo: 1, h: r => `${esc(r.ubic.lugar)}<br><span class="etq ${r.ubic.dias > 60 ? "pend" : "ok"}">hace ${f0(r.ubic.dias)} días</span>`, csv: r => `${r.ubic.lugar} ${r.ubic.dir} (${r.ubic.f})` }],
     filtros: [{ t: "Estado", campo: "estado", valor: r => r.estado, opciones: ORD_SAL.filter(e => D.salidas.some(x => x.estado === e)) },
-      { t: "Quién la movió", campo: "quien", valor: r => r.mov.ruc === D.meta.ruc ? "El importador" : "El comprador o un tercero" },
+      { t: "Quién la movió", campo: "quien", valor: r => r.mov.ruc === D.meta.ruc ? "El importador" : r.imp_c ? "Otro importador con beneficio" : "El comprador o un tercero" },
       { t: "Tipo", campo: "cat", valor: r => r.maq.cat },
       { t: "Antigüedad al salir", campo: "edad", valor: edadT, opciones: EDADES.filter(o => D.salidas.some(x => edadT(x) === o)) }] });
 }

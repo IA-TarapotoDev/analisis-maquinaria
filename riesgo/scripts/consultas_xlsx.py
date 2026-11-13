@@ -223,11 +223,13 @@ def main(r_json, salida, r_previo=None):
         if x["estado"] == "Descartada" and not x.get("ver"):
             continue                        # descartadas por los datos del tablero (con traslado o sin beneficio): no hay nada que completar
         nums = ", ".join(d["guias"][i]["num"] for i in x["gs"][:6]) + (f" y {len(x['gs']) - 6} más" if len(x["gs"]) > 6 else "")
-        filas_x.append([PRIO_X.get(x["estado"], 3), x["id"], x["estado"], f"{x['maq']['cat']}: {x['maq']['desc']}"[:150], x["maq"]["serie"],
+        prio_x = 1 if x.get("imp_c") and x["estado"] == "Por completar" else PRIO_X.get(x["estado"], 3)   # la movió otro importador con beneficio
+        dam_tab = ((x["dam"]["dam"] + (" serie " + x["dam"]["serie"] if x["dam"]["serie"] else "")) if x["dam"]["fuente"] not in ("", "Verificación del equipo")
+                   else ("Revisar las DAM del importador: " + ", ".join(x["dams_cand"])) if x.get("dams_cand") and x["dam"]["benef"] is None else "")
+        filas_x.append([prio_x, x["id"], x["estado"], f"{x['maq']['cat']}: {x['maq']['desc']}"[:150], x["maq"]["serie"],
                         nombre_ruc(x["mov"]), nombre_ruc(x["rec"]), fecha(x["f"]), x["p"],
                         f"{x['ubic']['lugar']}" + (f" · {x['ubic']['dir']}" if x["ubic"]["dir"] else "") + f" (al {fx(x['ubic']['f'])})",
-                        nums, x["clave"], ("Falta " + "; ".join(x["falta"])) if x["falta"] else x["motivo"],
-                        (x["dam"]["dam"] + (" serie " + x["dam"]["serie"] if x["dam"]["serie"] else "")) if x["dam"]["fuente"] not in ("", "Verificación del equipo") else ""])
+                        nums, x["clave"], ("Falta " + "; ".join(x["falta"])) if x["falta"] else x["motivo"], dam_tab])
     filas_x.sort(key=lambda r: (r[0], r[1]))
     cols_x = [("Prioridad", 9, "dato"), ("Expediente", 10, "dato"), ("Estado", 16, "dato"), ("Máquina", 40, "dato"), ("Serie de la máquina (guía)", 20, "dato"),
               ("Quién la movió", 32, "dato"), ("Quién la recibió", 32, "dato"), ("Fecha de salida", 12, "dato"), ("Partida", 24, "dato"),

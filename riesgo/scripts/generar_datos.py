@@ -92,10 +92,11 @@ def norm(s):
 def cat_maquina(desc):
     d = norm(desc)
     reglas = [
-        ("RETROEXCAVADORA", "Retroexcavadora"), ("EXCAVADORA", "Excavadora"),
+        ("RETROEXCAVADORA", "Retroexcavadora"), ("RETRO EXCAVADORA", "Retroexcavadora"), ("RETRO-EXCAVADORA", "Retroexcavadora"),
+        ("EXCAVADORA", "Excavadora"),
         ("MINICARGADOR", "Minicargador"), ("MINI CARGADOR", "Minicargador"), ("MINI-CARGADOR", "Minicargador"), ("CARGADOR", "Cargador frontal"),
         ("MOTONIVELADORA", "Motoniveladora"), ("RODILLO", "Rodillo compactador"),
-        ("TRACTOR AGRIC", "Tractor agrícola"), ("TRACTOR", "Tractor de orugas"),
+        ("TRACTOR AGRIC", "Tractor agrícola"), ("TRACTOR", "Tractor de orugas"), ("BULLDOZER", "Tractor de orugas"),
         ("GRUPO ELECTROGENO", "Grupo electrógeno"), ("MOTOR MARINO", "Motor marino"), ("MOTOR", "Motor diésel"),
         ("MARTILLO", "Martillo hidráulico"), ("RASTRA", "Implemento agrícola"),
         ("ROTOVATOR", "Implemento agrícola"), ("CORTADORA", "Implemento agrícola"),
@@ -410,7 +411,18 @@ def leer_control_ia(ruta, ruc):
     # Alcance: toda la maquinaria con beneficio. Resumen por importador (sin series: el cuaderno no las trae)
     CLASES = {"MAQUINARIA AMARILLA": "amarilla", "MAQUINARIA AGRICOLA": "agricola", "MAQUINARIA DE USO INDUSTRIAL": "otras",
               "GRUPO ELECTROGENO": "otras", "MOTORES DIVERSOS": "otras", "MOTORES FUERA DE BORDA": "otras"}
-    imp, ct = {}, hoja("ConsolidadoT")
+    imp, ct, dams_imp = {}, hoja("ConsolidadoT"), {}
+
+    def fecha_celda(v):
+        """Fecha de una celda del cuaderno: fecha, número de serie de Excel o texto dd/mm/aaaa → aaaa-mm-dd."""
+        if v is None or (not isinstance(v, str) and pd.isna(v)):
+            return ""
+        if hasattr(v, "strftime"):
+            return v.strftime("%Y-%m-%d")
+        if isinstance(v, (int, float)) and 30000 < v < 60000:
+            return (date(1899, 12, 30) + timedelta(days=int(v))).isoformat()
+        t_ = pd.to_datetime(str(v), dayfirst=True, errors="coerce")
+        return t_.date().isoformat() if not pd.isna(t_) else ""
     if len(ct) and "Tipo_Mercancia" in ct and "RUC_Importador" in ct:
         col_res = next((c for c in ct.columns if re.sub(r"[^A-Z]", "", norm(c)).startswith("RESULTADOSOLIC")), None)
         for _, r in ct.iterrows():
@@ -419,6 +431,11 @@ def leer_control_ia(ruta, ruc):
                 continue
             x = imp.setdefault(ruc_i, {"ruc": ruc_i, "nombre": re.sub(r"\s+", " ", txt(r.get("Nombre_Importador"))), "dams": 0, "amarilla": 0, "agricola": 0,
                                        "otras": 0, "sin_benef": 0, "anios": Counter(), "ciudades": Counter(), "tipos": Counter(), "tras": 0})
+            # Fecha de la DAM: numeración (a veces vacía o como número de Excel); si no, la del pago o la de la solicitud
+            f_dam = next((f_ for f_ in (fecha_celda(r.get(c_)) for c_ in ("Fech_N_DAM", "Fecha_Pago_Ingr_Num", "FechaSolic_Reg")) if f_), "")
+            dams_imp.setdefault(ruc_i, []).append({
+                "dam": dams_[0], "f": f_dam, "cat": cat_maquina(txt(r.get("Mercancía"))),
+                "benef": not (col_res and norm(txt(r.get(col_res))).startswith(("IMPROCEDENTE", "SIN SOLICITUD")))})
             x["dams"] += 1
             x[clase] += 1
             x["anios"][dams_[0].split("-")[1]] += 1
@@ -439,6 +456,7 @@ def leer_control_ia(ruta, ruc):
         meta["traslados_maq"] = {"total": int(len(am)), "anios": f"{anios[0]} a {anios[-1]}" if anios else "",
                                  "solicitantes": len({txt(v) for v in am.Doc_Solicitante}),
                                  "no_importador": int(sum(1 for v in am.Doc_Solicitante if txt(v) not in imp))}
+    meta["dams_imp"] = dams_imp
     meta["importadores"] = sorted(({**x, "anios": dict(sorted(x["anios"].items())), "ciudades": [k for k, _ in x["ciudades"].most_common(3)],
                                     "tipos": [k for k, _ in x["tipos"].most_common(3)]} for x in imp.values()),
                                   key=lambda x: -(x["amarilla"] * 3 + x["agricola"] + x["otras"]))
@@ -693,7 +711,7 @@ MAQ_GUIA = {"Excavadora", "Retroexcavadora", "Minicargador", "Cargador frontal",
 NO_ES_MAQ = re.compile(r"\b(1:50|1/50|ESCALA|JUGUETE\w*|MINIATURA\w*|ANFO|BATERIA\w*|CELULAR\w*|NEUMATICO\w*|LLANTA\w*|REPUESTO\w*)\b")
 PREFIJO_BIEN = re.compile(r"^(\d+\s*(UND|UNIDAD(ES)?|U)?\.?\s+|TRANSPORTE( EN CAMA BAJA)? DE (UNA |UN )?|SERVICIO DE (TRASLADO|TRANSPORTE) DE (UNA |UN )?|"
                           r"TRASLADO DE (UNA |UN )?)+")
-SERIE_ROTULO = re.compile(r"(?:\bSERIE|\bS/N|\bPIN|\bVIN|\bCHASIS)\s*(?:DE\s+)?(?:LA\s+)?(?:MAQ(?:UINA|NA)?\.?)?\s*(?:NUMBER)?\s*[:#.\-*]*\s*([A-Z0-9][A-Z0-9\-]{4,19})")
+SERIE_ROTULO = re.compile(r"(?:\bSERIAL|\bSERIE|\bS/N|\bPIN|\bVIN|\bCHASIS)\s*(?:DE\s+)?(?:LA\s+)?(?:MAQ(?:UINA|NA)?\.?)?\s*(?:NUMBER)?\s*[:#.\-*]*\s*([A-Z0-9][A-Z0-9\-]{4,19})")
 
 
 def maquinas_en_bienes(bienes):
@@ -2243,6 +2261,23 @@ def main(a):
             pasos.insert(0, f"La venta {cpe[3:]} es a un no domiciliado y tiene DAM de exportación {c_['exp']}: confirmar que la salida corresponde a esa exportación y que tuvo su traslado.")
         if aviso_dam:
             pasos.insert(0, aviso_dam)
+        # La movió otro importador que el cuaderno registra con DAM de maquinaria: la serie está probablemente en una de ellas
+        imp_c = (meta_ctl.get("dams_imp") or {}).get(mov["ruc"]) if mov["ruc"] != ruc_imp else None
+        dams_cand = []
+        if imp_c and estado != "Descartada":
+            info_c = next((x_ for x_ in meta_ctl.get("importadores", []) if x_["ruc"] == mov["ruc"]), {})
+            antes_ = lambda d_: d_["f"] <= g0["f"] if d_["f"] else d_["dam"].split("-")[1] <= g0["f"][:4]   # sin fecha: el año de su número
+            familia_ = lambda c_: "Cargador" if c_ in ("Minicargador", "Cargador frontal") else c_   # un minicargador se declara a veces como cargadora
+            dams_cand = sorted((d_ for d_ in imp_c if familia_(d_["cat"]) == familia_(v["maq"]["cat"]) and antes_(d_)),
+                               key=lambda d_: d_["f"] or d_["dam"].split("-")[1], reverse=True)
+            if dam["benef"] is None:
+                txt_c = (f"{nom(mov).rstrip('.')} figura en el cuaderno de la IA como importador con beneficio ({info_c.get('amarilla', 0)} DAM de maquinaria amarilla, "
+                         f"{info_c.get('tras', 0)} traslados pedidos).")
+                if dams_cand:
+                    txt_c += (f" Busque la serie en sus DAM de {'cargadores' if familia_(v['maq']['cat']) == 'Cargador' else v['maq']['cat'].lower()} anteriores a la salida: "
+                              + ", ".join(d_["dam"] + ("" if d_["benef"] else " (sin beneficio)") for d_ in dams_cand[:8])
+                              + (f" y {len(dams_cand) - 8} más" if len(dams_cand) > 8 else "") + ".")
+                pasos.insert(0, txt_c)
         transp = {}
         for i in gs_:
             if guias[i]["tipo"] == "Transportista":
@@ -2257,7 +2292,8 @@ def main(a):
             "pruebas": {"serie": bool(serie) or None, "dam": dam["benef"], "plazo": plazo, "tras": (not tras) if tras is not None else None, "salida": bool(vig)},
             "recs": recs, "seguir": seguir,
             "transp": [{"ruc": r, "nombre": n_} for r, n_ in transp.items()], "placas": sorted({pl_ for i in gs_ for pl_ in guias[i]["placas"]})[:6],
-            "gs": sorted(set(gs_) | set(post), key=lambda i: (guias[i]["f"], i)), "ver": bool(ver), "obs": ver.get("obs", "")})
+            "gs": sorted(set(gs_) | set(post), key=lambda i: (guias[i]["f"], i)), "ver": bool(ver), "obs": ver.get("obs", ""),
+            "imp_c": bool(imp_c), "dams_cand": [d_["dam"] for d_ in dams_cand[:8]]})
     ORDEN_S = {"Caso armado": 0, "Indicio: guía dada de baja": 1, "Por completar": 2, "Regresó a la ZTE": 3, "Descartada": 4}
     salidas.sort(key=lambda x: (ORDEN_S[x["estado"]], len(x["falta"]), [-ord(c) for c in x["f"]]))
     # Cada máquina conserva su número de expediente: se toma de la versión anterior (por serie o, sin serie, por sus guías)
