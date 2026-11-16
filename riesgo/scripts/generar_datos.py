@@ -609,6 +609,41 @@ def benef_texto(v):
     return None
 
 
+def leer_contrataciones(ruta):
+    """Contrataciones públicas de maquinaria de una entidad de la ZTC (alquiler, movilización, obras que la requieren), por proveedor.
+    CSV con ruc_proveedor, razon_social, ruc_integrantes, equipos_mencionados, fecha_documento, monto, moneda, relevancia y observaciones.
+    Un consorcio cuenta también para cada integrante. No cuentan las órdenes anuladas ni las de relevancia «dudosa».
+    Devuelve {ruc: {nombre, n, alta, monto, equipos, desde, hasta, consorcio}}."""
+    import csv
+    out = {}
+    with open(ruta, encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            if norm(r.get("relevancia")) == "DUDOSA" or "ANULAD" in norm(r.get("observaciones")):
+                continue
+            prov = re.sub(r"\D", "", r.get("ruc_proveedor") or "")
+            quienes = ([(prov, False)] if len(prov) == 11 else []) + [(x, True) for x in re.findall(r"\d{11}", r.get("ruc_integrantes") or "") if x != prov]
+            for ruc, de_consorcio in quienes:
+                x = out.setdefault(ruc, {"nombre": "", "n": 0, "alta": 0, "monto": 0.0, "equipos": Counter(), "desde": "", "hasta": "", "consorcio": []})
+                if de_consorcio:
+                    if (r.get("razon_social") or "").strip() not in x["consorcio"]:
+                        x["consorcio"].append((r.get("razon_social") or "").strip())
+                else:
+                    x["nombre"] = x["nombre"] or (r.get("razon_social") or "").strip()
+                    try:
+                        x["monto"] += float(r.get("monto") or 0) if (r.get("moneda") or "PEN") == "PEN" else 0
+                    except ValueError:
+                        pass
+                x["n"] += 1
+                x["alta"] += norm(r.get("relevancia")) == "ALTA"
+                for e in re.split(r"[;,/]", r.get("equipos_mencionados") or ""):
+                    if e.strip():
+                        x["equipos"][e.strip().lower()] += 1
+                f_ = (r.get("fecha_documento") or "")[:10]
+                if re.fullmatch(r"\d{4}-\d{2}-\d{2}", f_):
+                    x["desde"], x["hasta"] = min(x["desde"] or f_, f_), max(x["hasta"], f_)
+    return out
+
+
 def ruc_valido(ruc):
     """RUC peruano: prefijo 10, 15, 16, 17 o 20 y dígito verificador (módulo 11)."""
     if not re.fullmatch(r"(10|15|16|17|20)\d{9}", ruc or ""):
@@ -1099,6 +1134,11 @@ def main(a):
     ruc_imp = str(m.NUM_DOCIDENT.iloc[0]).strip()
     desde = min(m.f.min(), e.f.min()).normalize()
     k8 = lambda x: x[-8:] if isinstance(x, str) and len(x) >= 8 else ""
+    # Proveedores de maquinaria de una entidad pública de la ZTC (SEACE): su maquinaria trabaja fuera de la ZTE
+    contr = leer_contrataciones(a.contrataciones) if getattr(a, "contrataciones", None) else {}
+    entidad_c = getattr(a, "contrataciones_entidad", None) or "una entidad pública de la ZTC"
+    a_ent = "al " + entidad_c[3:] if entidad_c.startswith("el ") else "a " + entidad_c       # «al Proyecto…», «a una entidad…»
+    de_ent = "del " + entidad_c[3:] if entidad_c.startswith("el ") else "de " + entidad_c
     dia = pd.Timedelta(days=1)
 
     # ---------- DAM y máquinas importadas ----------
@@ -2169,18 +2209,29 @@ def main(a):
         if len(cand) == 1:
             grupos_s[cand[0]]["gs"] += grupos_s.pop(k_)["gs"]
     # Las guías sin serie de un mismo dueño y tipo se separan por viaje (más de 20 días entre guías = otra salida)
+    # La guía del transportista que cita la guía del remitente es el mismo viaje, aunque tenga otra fecha.
     for k_ in [k for k in grupos_s if k.startswith("sin:")]:
-        gs_ = sorted(set(grupos_s[k_]["gs"]), key=lambda i: guias[i]["f"])
+        gs_all = set(grupos_s[k_]["gs"])
+        cita = {i: guias[i]["sustenta"] for i in gs_all if guias[i]["tipo"] == "Transportista" and guias[i].get("sustenta") in gs_all}
+        gs_ = sorted(gs_all - set(cita), key=lambda i: guias[i]["f"])
         viajes = [[gs_[0]]]
         for i in gs_[1:]:
             if (pd.Timestamp(guias[i]["f"]) - pd.Timestamp(guias[viajes[-1][-1]]["f"])).days > 20 or guias[i]["l"]["u"] != guias[viajes[-1][-1]]["l"]["u"]:
                 viajes.append([i])
             else:
                 viajes[-1].append(i)
+        for i, j in sorted(cita.items()):
+            next(v for v in viajes if j in v).append(i)
         maq_ = grupos_s.pop(k_)["maq"]
         for n_, v in enumerate(viajes):         # cada viaje con la descripción de sus propias guías
             maq_v = next((x for i in v for x in maquinas_guia(i) if x["cat"] == maq_["cat"] and not x["serie"]), maq_)
             grupos_s[f"{k_}|{n_}"] = {"gs": v, "maq": maq_v}
+
+    # Guías vigentes que traen máquinas de la ZTC a la ZTE, por dueño y distrito de llegada: para reconocer el regreso de una máquina de la ZTC
+    entradas = {}
+    for i, g in enumerate(guias):
+        if g["p"]["zona"] == "ZTC" and g["l"]["zona"] == "ZTE" and g["vig"] and g["f"]:
+            entradas.setdefault((dueno(g)["ruc"], g["l"]["u"]), []).append(i)
 
     prov_zte = {}                                                # departamento → provincias que están (casi) enteras en la ZTE
     for (dep_, prov_), z_ in ubi_df.groupby(["departamento", "provincia"]).zona:
@@ -2272,6 +2323,10 @@ def main(a):
         """Orden de las guías: por fecha y, el mismo día, por emisor, serie y número correlativo (T001-9 antes que T001-10)."""
         se_, _, nu_ = guias[i]["num"].rpartition("-")
         return (guias[i]["f"], guias[i]["em"]["ruc"], se_, int(nu_) if nu_.isdigit() else 0, i)
+    # Modelo de la máquina en la descripción: palabras con números («320D2L», «210»), sin la cantidad («01») ni el año («2024»)
+    modelo_t = lambda t: [w for w in re.findall(r"[A-Z0-9]+", norm(t)) if re.search(r"\d", w) and (re.search(r"[A-Z]", w) or len(w) >= 3)
+                          and not re.fullmatch(r"(19|20)\d\d", w)]
+    usadas_ll = set()                                            # guías de ingreso que ya explican otra salida sin serie
     salidas = []
     for k_, v in grupos_s.items():
         gs_ = sorted(set(v["gs"]), key=lambda i: (guias[i]["f"], guias[i]["tipo"] != "Remitente", i))
@@ -2410,6 +2465,29 @@ def main(a):
         if mov["ruc"] == ruc_imp and vig and (dam["benef"] is not True or tras is True):
             # envío del propio importador sin beneficio confirmado (o con traslado): lo que falta no es ubicar la máquina
             seguir, cubiertos = [], []
+        # ¿Había llegado a la ZTE desde la ZTC? Si no es del importador ni de otro importador con beneficio (cuyas máquinas sí llegan del
+        # puerto para el reconocimiento) y no tiene una DAM con beneficio, su salida es el regreso de una máquina que no es de la Amazonía.
+        # Con serie: una guía anterior de la ZTC a la ZTE la nombra. Sin serie: el mismo dueño trajo una máquina del mismo tipo al mismo
+        # distrito en el año anterior (salvo que le haya comprado máquinas al importador: la que sale puede ser una de esas); cada guía de
+        # ingreso explica una sola salida y se prefiere la que describe el mismo modelo.
+        llego, mod_ll = None, ""
+        if not k_m and mov["ruc"] != ruc_imp and mov["ruc"] not in (meta_ctl.get("dams_imp") or {}) and dam["benef"] is not True:
+            cand_ = []
+            if len(serie) >= 6:
+                cand_ = [i for i in nombran(serie) if guias[i]["p"]["zona"] == "ZTC" and guias[i]["l"]["zona"] == "ZTE" and guias[i]["vig"] and guias[i]["f"] <= g0["f"]]
+            elif not serie and mov["ruc"] not in cli:         # sin serie no se aplica a quien compró máquinas al importador
+                f0_ = date.fromisoformat(g0["f"])
+                cand_ = [i for i in entradas.get((mov["ruc"], g0["p"]["u"]), []) if guias[i]["f"] <= g0["f"] and i not in usadas_ll
+                         and (f0_ - date.fromisoformat(guias[i]["f"])).days <= 365 and any(x["cat"] == v["maq"]["cat"] for x in maquinas_guia(i))]
+                mod_s = {w for i in gs_ for x in maquinas_guia(i) if x["cat"] == v["maq"]["cat"] for w in modelo_t(x["desc"])}
+                mismo_m = {i: [w for x in maquinas_guia(i) if x["cat"] == v["maq"]["cat"] for w in modelo_t(x["desc"]) if w in mod_s] for i in cand_}
+                cand_ = [i for i in cand_ if mismo_m[i]] or cand_
+                if cand_:
+                    i_ll = max(cand_, key=orden_g)
+                    usadas_ll.add(i_ll)
+                    mod_ll = " ".join(dict.fromkeys(mismo_m[i_ll]))
+                    cand_ = [i_ll]
+            llego = guias[max(cand_, key=orden_g)] if cand_ else None
         # Guías vigentes posteriores que mueven la misma máquina dentro de la ZTE. Si el transportista la llevó dentro de la ZTE
         # en esos días y no hay guía de transportista hacia la ZTC, la guía a la ZTC probablemente no se usó.
         dentro = [guias[i] for i in post if i not in gs_ and guias[i]["p"]["zona"] == "ZTE" and guias[i]["l"]["zona"] == "ZTE"] if vig else []
@@ -2434,6 +2512,11 @@ def main(a):
             # Sin una DAM que diga cuándo se importó, cuenta el año de la máquina (el que anota el equipo o el de la guía)
             estado, motivo = "Descartada", ((f"Máquina antigua: según el equipo es del año {fab}" if fab_eq else f"Máquina antigua: la guía dice que es del año {fab}")
                                             + f" y {fuera_(fab)}")
+        elif llego is not None:
+            estado, motivo = "Descartada", (f"Llegó desde la ZTC: el {ftx(llego['f'])} la guía {llego['num']} "
+                                            + ("la trajo" if serie else f"del mismo dueño trajo una {v['maq']['cat'].lower()} del mismo modelo ({mod_ll})" if mod_ll
+                                               else f"del mismo dueño trajo una máquina del mismo tipo ({v['maq']['cat'].lower()})")
+                                            + f" de {llego['p']['lugar']} a {llego['l']['lugar']}; su salida es el regreso de una máquina que no es de la Amazonía")
         elif regreso is not None:
             estado, motivo = "Regresó a la ZTE", f"Volvió el {ftx(regreso['f'])} con la guía {regreso['num']} ({regreso['l']['lugar']})"
         else:
@@ -2474,6 +2557,16 @@ def main(a):
             if masivos_q:
                 pasos.append("Las guías de " + " y de ".join(nom(q).rstrip(".") for q in masivos_q) + " no se pueden descargar todas: emite más de 100 por día. "
                              "Ubique la máquina por su serie en las guías de los transportistas o requiérale que informe dónde está.")
+            # Quien la tiene, la movió o la recibió alquila maquinaria a una entidad de la ZTC: la máquina puede estar trabajando ahí
+            vistos_c = set()
+            for q_ in (ten, mov, rec, ubic["rec"]):
+                c_q = contr.get(q_.get("ruc") or "")
+                if c_q and q_["ruc"] not in vistos_c:
+                    vistos_c.add(q_["ruc"])
+                    eq_ = ", ".join(e_ for e_, _ in c_q["equipos"].most_common(3))
+                    cuando_c = f"el {ftx(c_q['desde'])}" if c_q["desde"] == c_q["hasta"] else f"del {ftx(c_q['desde'])} al {ftx(c_q['hasta'])}"
+                    pasos.append(f"{nom(q_).rstrip('.')} alquila maquinaria {a_ent} (ZTC): {c_q['n']} {'orden' if c_q['n'] == 1 else 'órdenes'} {cuando_c}"
+                                 + (f" ({eq_})" if eq_ else "") + ". La máquina puede estar trabajando ahí.")
             if estado == "Caso armado":
                 pasos.append("Con la ubicación confirmada, programar la verificación física y el requerimiento al tenedor.")
             duda = duda_direccion(g0) if vig else ""
@@ -2668,6 +2761,8 @@ def main(a):
             pts, por = pts + (2 if n_sin >= 4 else 1), por + [f"{n_sin} máquinas sin IGV"]
         if c.get("nuevo") or c.get("no_habido"):
             pts, por = pts + 1, por + ["RUC reciente o no habido"]
+        if doc in contr:
+            pts, por = pts + 2, por + ["alquila maquinaria al Estado en la ZTC"]
         if c["perfil"] in ("Entidad pública", "No domiciliado") or n_sin <= 0:
             pts = min(pts, 1) if not sal_c else pts
         c["cob"], c["cob_t"] = cobertura(doc, c["primera"]) if ruc_valido(doc) else (None, [])
@@ -2861,6 +2956,32 @@ def main(a):
                    + (f"; quedan {len(imp_pend) - len(lote)} más para las siguientes listas." if len(imp_pend) > len(lote) else "."),
             "busquedas": [{"etiqueta": etq_imp(x), "grupo": "importador", "rucEmisor": x["ruc"], "desde": x["falta_d"], "hasta": x["falta_h"]} for x in lote]})
 
+    # Proveedores de maquinaria de una entidad pública de la ZTC: sus guías como destinatario muestran si recibieron máquinas de la ZTE,
+    # y como remitente, a dónde las llevan. Desde el 01/01/2025 y solo las fechas que faltan; de 8 en 8, primero los de más órdenes.
+    if contr:
+        desde_c, pend_c = "2025-01-01", []
+        for ruc_c, x in contr.items():
+            if ruc_valido(ruc_c):
+                faltas = [(rol, tramo_faltante(ruc_c, desde_c, rol)) for rol in ("receptor", "emisor")]
+                faltas = [(rol, f_) for rol, f_ in faltas if f_]
+                if faltas:
+                    pend_c.append((ruc_c, x, faltas))
+        pend_c.sort(key=lambda t: (-t[1]["alta"], -t[1]["n"], t[0]))
+        if pend_c:
+            lote_c, busq_c = pend_c[:8], []
+            for ruc_c, x, faltas in lote_c:
+                nombre_c = x["nombre"] or (x["consorcio"][0] if x["consorcio"] else ruc_c)
+                for rol, (d_, h_) in faltas:
+                    busq_c.append({"etiqueta": f"{nombre_c} ({ruc_c}): guías como {'destinatario' if rol == 'receptor' else 'remitente'} desde el {ftx(d_)}"
+                                               + ("" if h_ == "hoy" else f" hasta el {ftx(h_)}"),
+                                   "grupo": "contratista", ("rucReceptor" if rol == "receptor" else "rucEmisor"): ruc_c, "desde": d_, "hasta": h_})
+            cola.insert(next((k for k, c in enumerate(cola) if c["id"] == "excel"), len(cola)), {
+                "id": "contratistas", "t": f"Guías de los proveedores de maquinaria {de_ent}", "n": len(lote_c), "u": "RUC por consultar",
+                "por": f"Le alquilan maquinaria {a_ent}, en la ZTC (órdenes y contratos del SEACE). Sus guías como destinatario muestran si recibieron "
+                       "máquinas de la ZTE; como remitente, a dónde las llevan. Desde el 01/01/2025 y solo las fechas que faltan; primero los que tienen "
+                       "más órdenes de alquiler" + (f"; quedan {len(pend_c) - len(lote_c)} más para las siguientes listas." if len(pend_c) > len(lote_c) else "."),
+                "busquedas": busq_c})
+
     # ---------- Salida ----------
     dams = {}
     for k in sorted(set(mq.dam)):
@@ -2942,5 +3063,8 @@ if __name__ == "__main__":
     ap.add_argument("--salidas-previas", help="JSON de datos de la versión anterior: cada máquina conserva su número de expediente (S01, S02…)")
     ap.add_argument("--control-ia", help="Cuaderno de control de la intendencia (xlsx/xlsm): control en destino, NCN, RI y traslados")
     ap.add_argument("--guias", nargs="*", default=[], help="JSON que descarga el extractor de GRE (uno o más; las guías repetidas se leen una sola vez)")
+    ap.add_argument("--contrataciones", help="Contrataciones públicas de maquinaria de una entidad de la ZTC (CSV por orden: ruc_proveedor, razon_social, "
+                                              "ruc_integrantes, equipos_mencionados, fecha_documento, monto, relevancia…)")
+    ap.add_argument("--contrataciones-entidad", default="una entidad pública de la ZTC", help="Nombre de esa entidad para los textos del tablero")
     ap.add_argument("--transportistas", help="Transportistas vigilados (TXT: un RUC por línea, opcionalmente con el nombre); entran en la «Lista del día» de guías")
     main(ap.parse_args())
