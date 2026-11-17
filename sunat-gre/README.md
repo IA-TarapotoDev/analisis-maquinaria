@@ -2,7 +2,7 @@
 
 Script para la consola de Microsoft Edge que descarga, dentro de su propia sesión de SUNAT, las guías de remisión (remitente, transportista y por eventos) y su detalle: bienes, peso, fechas, punto de partida (agencia), llegada, transportista, vehículo y conductor. Funciona junto con el [tablero de riesgo](../riesgo/README.md): el tablero arma la lista de búsquedas y el extractor la ejecuta.
 
-- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.0.0).
+- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.2.0).
 - Usa solo la consulta autorizada de la pantalla de guías de SUNAT, con la sesión de quien lo ejecuta. No evade controles ni guarda la conexión.
 
 ## Dónde se ejecuta
@@ -49,13 +49,32 @@ SUNAT entrega como máximo 100 guías por consulta (código 2021). El extractor:
 1. Divide el periodo en tramos de días según la cantidad de guías que va encontrando.
 2. Si un solo día pasa de 100, lo consulta por bloques de 4 horas.
 3. Si un bloque de 4 horas pasa de 100, lo consulta por tipo de guía.
-4. Si aun así un tramo pasa de 100, lo anota en la hoja **Búsquedas** (resultado «Tramo de 4 horas con más de 100 guías») y en **Control** (`TRAMO_SUPERA_100`).
+4. Si aun así un bloque de 4 horas pasa de 100, pide sus guías **una por una por su número** (la consulta por número no tiene el límite de 100). Los números de cada serie son correlativos: con las guías de esa serie de antes y de después del bloque, se sabe exactamente qué números se emitieron dentro. Si no hay guía después (el bloque es el último del periodo), sigue hasta salir del bloque o hasta que 10 números seguidos no existan; si no hay guía antes, retrocede hasta quedar antes del bloque.
+5. Lo hecho queda en la hoja **Por número** del Excel: serie, bloques, números pedidos, guardados, que no existen y los que quedaron por pedir. El bloque sigue anotado en **Búsquedas** («Tramo de 4 horas con más de 100 guías»).
+
+Límites:
+- Una serie que no aparece en ninguna guía conocida no se puede rellenar: no se sabe que existe. Para evitarlo, la lista puede traer **anclas**: la última guía conocida de cada serie en días anteriores.
+- Las búsquedas por destinatario no se rellenan: sus guías son de muchos emisores, cada uno con su numeración.
+- Pedir por número cuesta lo mismo que abrir una guía (alrededor de 1 segundo): un emisor con 700 guías al día toma unos 12 minutos por día.
+
+## Opciones (Más opciones)
+
+| Opción | Qué hace |
+|---|---|
+| Pedir por número los bloques de más de 100 | Activada por omisión (punto 4 de arriba). |
+| Solo lista | Cuenta las guías sin abrirlas (diagnóstico rápido). Los bloques de más de 100 se estiman por la numeración, sin pedirlos. |
+| Tope de tiempo (minutos) | Al llegar, se detiene, guarda y descarga lo obtenido; lo que faltó queda anotado en el resumen. 0 = sin tope. |
+| Guardar solo las que llegan a… | Departamento de llegada (nombre o código: «San Martín» o «22»; varios, separados por comas). Las guías se abren igual (el listado no trae el destino), pero las que llegan a otro departamento no se guardan: solo se cuentan y quedan anotadas para no volver a abrirlas. |
+
+Si la lista trae sus propias opciones (`opciones: { soloLista, rellenar, topeMin, deptoLlegada }`), mandan las de la lista. La lista también puede traer `prioridad` (documentos: las guías cuyo destinatario figura en el listado con uno de ellos se abren primero; la lista solo se usa en memoria y no se exporta) y `anclas` (`{ rucEmisor, codCpe, serie, numero, fecha }`).
+
+Si se detiene a mitad de la búsqueda, conserva las guías ya encontradas (sin abrir) y se pueden descargar con ⬇ JSON o ⬇ Excel.
 
 ## Archivos que entrega
 
 | Archivo | Para qué | Contenido |
 |---|---|---|
-| JSON | Tablero | Una entrada por guía: `clave`, `estado` (`con_detalle`, `ya_en_tablero`, `no_existe`, `no_consultada`, `sin_detalle`, `no_procesada`), `citadaEnFactura`, fila del listado (estado actual en SUNAT), `detalle` completo y las búsquedas (y casos) que la encontraron. También las consultas hechas, los errores y el control de calidad. Nunca incluye la conexión. |
+| JSON | Tablero | Una entrada por guía: `clave`, `estado` (`con_detalle`, `ya_en_tablero`, `no_existe`, `no_consultada`, `sin_detalle`, `no_procesada`, `solo_listado` y `fuera_de_destino`, que trae solo la clave y el ubigeo de llegada), `citadaEnFactura`, fila del listado (estado actual en SUNAT), `detalle` completo y las búsquedas (y casos) que la encontraron. También las consultas hechas, lo pedido por número (`relleno`), los errores y el control de calidad. Nunca incluye la conexión ni la lista de prioridad. |
 | Excel | Revisión | Resumen (con una fila por búsqueda), Guías (una fila por guía, con todos los campos del detalle), Bienes (una fila por bien), listas anidadas en hojas aparte, Búsquedas, Errores y Control. Los textos conservan los ceros a la izquierda. |
 | CSV | Opcional | Los mismos datos en CSV (UTF-8 con BOM, separador «;»): **Más opciones > ⬇ CSV**. |
 
@@ -71,7 +90,7 @@ Las guías anuladas o con baja también se descargan, con su estado.
 | HTTP 401 | La conexión venció: abra una guía con «Ver» y el proceso continúa solo. |
 | HTTP 403 | La cuenta no tiene permiso para esa consulta: el proceso se detiene. |
 | El navegador bloquea las descargas | Permita las descargas múltiples para el sitio, o use **⬇ Excel** / **⬇ JSON** del panel. |
-| Se detuvo a mitad | Pulse otra vez «Buscar y descargar»: solo consulta lo que falta. |
+| Se detuvo a mitad | Lo encontrado se conserva (⬇ JSON o ⬇ Excel). Pulse otra vez «Buscar y descargar»: solo consulta lo que falta. |
 | Muchas guías «no existe» en una consulta por número | Es normal al final de cada serie: son números que aún no se emiten. No detienen la descarga (desde la versión 3.1.0). |
 
 ## Seguridad

@@ -947,11 +947,11 @@ def leer_guias(rutas, r_ubi):
         sin_terminar = set()
         if str(d.get("estadoFinal") or "COMPLETADO") != "COMPLETADO":
             for g in d.get("guias") or []:
-                if g.get("estado") == "no_procesada":
+                if g.get("estado") in ("no_procesada", "solo_listado"):      # sin abrir: el RUC no queda consultado
                     lst_ = g.get("listado") or {}
                     sin_terminar |= {str(lst_.get(k) or "").strip() for k in ("rucEmisor", "rucReceptor")} - {""}
             if sin_terminar:
-                meta["sin_terminar"] = meta.get("sin_terminar", 0) + sum(1 for g in d.get("guias") or [] if g.get("estado") == "no_procesada")
+                meta["sin_terminar"] = meta.get("sin_terminar", 0) + sum(1 for g in d.get("guias") or [] if g.get("estado") in ("no_procesada", "solo_listado"))
         for b in d.get("busquedas") or []:
             de_, ha_ = str(b.get("desde") or "")[:10], str(b.get("hasta") or "")[:10]
             if es_iso(hecho) and es_iso(ha_) and ha_ > hecho:

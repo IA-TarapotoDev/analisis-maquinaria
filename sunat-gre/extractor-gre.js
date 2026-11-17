@@ -1,6 +1,6 @@
 /* =====================================================================
  * EXTRACTOR DE GRE – Guías de Remisión Electrónica (SUNAT, uso autorizado)
- * Versión 3.0.0
+ * Versión 3.2.0
  *
  * Dónde ejecutarlo:
  *   Microsoft Edge > DevTools (F12) > Console > selector de contexto
@@ -19,8 +19,14 @@
  *   - Busca guías de remitente (09), de transportista (31) y por eventos (G9).
  *   - SUNAT entrega como máximo 100 guías por consulta (error 2021): divide los
  *     periodos por días y, si un día pasa de 100, por bloques de 4 horas y por tipo.
+ *     Si un bloque de 4 horas de un solo tipo aún pasa de 100, sus guías se piden
+ *     una por una por su número: los números de cada serie son correlativos y las
+ *     guías de antes y de después del bloque dicen cuáles faltan.
  *   - Consulta el detalle de cada guía nueva; las que el tablero ya tiene no se
  *     vuelven a descargar (solo se anota su estado actual).
+ *   - Opciones: «solo lista» (cuenta sin abrir las guías), tope de tiempo (se detiene,
+ *     guarda y descarga) y destino (guarda solo las guías que llegan a un departamento).
+ *   - Si se detiene, conserva lo ya encontrado.
  *   - Las guías citadas en las facturas se consultan directamente por su número.
  *   - Si la conexión vence, espera a que se abra una guía con «Ver» y continúa.
  *
@@ -36,7 +42,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '3.1.0';
+  const VERSION = '3.2.0';
   const API_LISTADO = 'https://api-intranet.sunat.peru/v1/contribuyente/gre/comprobantes';
   const PANEL_ID = 'gre-extractor-host';
   const ORIGEN_CORRECTO = 'https://intranet.sunat.peru';
@@ -129,7 +135,19 @@
     maxNoExistenSerie: 10,      // consulta por número: tantos seguidos que no existen tras la última guía conocida = fin de la serie
     esperaConexionMin: 30,      // minutos que espera una conexión nueva antes de detenerse
     descargarJSON: true,        // al terminar: JSON para el tablero
-    descargarExcel: true        // al terminar: Excel para revisar
+    descargarExcel: true,       // al terminar: Excel para revisar
+    soloLista: false,           // solo el listado de SUNAT: cuenta las guías sin abrirlas (diagnóstico)
+    rellenar: true,             // bloques de 4 horas con más de 100 guías: pedirlas una por una por su número
+    topeMin: 0,                 // minutos máximos de la descarga (0 = sin tope): al llegar se detiene, guarda y descarga
+    deptoLlegada: ''            // guardar solo las guías que llegan a estos departamentos (código o nombre; vacío = todas)
+  });
+  const MAX_HUECO_RELLENO = 5000; // un hueco más grande entre dos guías de una serie no se rellena (numeración rara)
+  // Departamentos del Perú por su código de ubigeo (los dos primeros dígitos)
+  const DEPARTAMENTOS = Object.freeze({
+    '01': 'AMAZONAS', '02': 'ANCASH', '03': 'APURIMAC', '04': 'AREQUIPA', '05': 'AYACUCHO', '06': 'CAJAMARCA', '07': 'CALLAO',
+    '08': 'CUSCO', '09': 'HUANCAVELICA', '10': 'HUANUCO', '11': 'ICA', '12': 'JUNIN', '13': 'LA LIBERTAD', '14': 'LAMBAYEQUE',
+    '15': 'LIMA', '16': 'LORETO', '17': 'MADRE DE DIOS', '18': 'MOQUEGUA', '19': 'PASCO', '20': 'PIURA', '21': 'PUNO',
+    '22': 'SAN MARTIN', '23': 'TACNA', '24': 'TUMBES', '25': 'UCAYALI'
   });
 
   const ESTADOS_REINTENTABLES = new Set([429, 500, 502, 503, 504]);
@@ -160,7 +178,7 @@
     controller: null,
     config: null,
     motivoFin: '',
-    fase: '',                  // 'conexion' | 'busqueda' | 'detalle'
+    fase: '',                  // 'conexion' | 'busqueda' | 'detalle' | 'relleno'
     tiempos: { inicio: 0, inicioDetalle: 0, fin: 0 },
     tokenExp: null,            // solo la hora de vencimiento, para mostrarla
     pedido: null,              // lista cargada desde el tablero (tal como llegó)
@@ -179,13 +197,17 @@
     resumen: null,
     fallosRedSeguidos: 0,
     huboBusquedaCorrecta: false,
-    mensajesExceso: new Set()  // mensajes de SUNAT que resultaron significar «demasiadas guías»
+    mensajesExceso: new Set(), // mensajes de SUNAT que resultaron significar «demasiadas guías»
+    encontradas: new Map(),    // clave -> item del listado (se conserva aunque se detenga la búsqueda)
+    relleno: [],               // tramos de más de 100 guías pedidos por número: qué serie, qué números y cómo resultó
+    fueraVistas: new Map()     // clave -> ubigeo de llegada: guías ya abiertas que no llegan al destino (esta sesión)
   };
 
   function progresoVacio() {
     return {
       total: 0, actual: '', procesadas: 0, ok: 0, error: 0, omitidas: 0, consultadas: 0, pendientesReales: 0,
-      diasTotales: 0, diasHechos: 0, encontradas: 0, tareaActual: 0, tareasTotal: 0, busquedaActual: ''
+      diasTotales: 0, diasHechos: 0, encontradas: 0, tareaActual: 0, tareasTotal: 0, busquedaActual: '',
+      fuera: 0, relleno: 0, rellenoTotal: 0, rellenoHechos: 0
     };
   }
   estado.progreso = progresoVacio();
@@ -205,6 +227,8 @@
    * 3. Utilidades generales
    * ------------------------------------------------------------- */
   class ErrorValidacion extends Error { constructor(m) { super(m); this.name = 'ErrorValidacion'; } }
+  /** Se llegó al tope de tiempo: se detiene como si terminara (guarda y descarga lo obtenido). */
+  class ErrorTope extends Error { constructor(m) { super(m || 'Se llegó al tope de tiempo'); this.name = 'ErrorTope'; } }
   class ErrorAutenticacion extends Error {
     constructor(status, url, mensaje, codigo) {
       super(mensaje || `HTTP ${status}: SUNAT no aceptó la conexión.`);
@@ -378,6 +402,43 @@
     return claveGuia(...partes);
   }
 
+  /** Fecha y hora de emisión «AAAA-MM-DDTHH:MM» (del detalle o del listado: «13/11/2026 20:41»). */
+  function momentoDe(det, it) {
+    const v = texto(primero(obtener(det || {}, 'emision.fecEmision'), det && det.fecEmision, it && it.fecEmision)).trim();
+    let m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(v);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
+    m = /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/.exec(v);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}T${m[4] || '00'}:${m[5] || '00'}`;
+    return '';
+  }
+  /** Bloque de 4 horas de SUNAT (1 = 00:00–03:59 … 6 = 20:00–23:59) como inicio y fin comparables. */
+  const ventanaDe = (dia, bloque) => ({ ini: `${dia}T${dos((bloque - 1) * 4)}:00`, fin: `${dia}T${dos(bloque * 4 - 1)}:59` });
+
+  /** Formas de un documento para compararlo: DNI de 8 dígitos (con ceros a la izquierda) y, de un RUC 10, su DNI. */
+  function docsDe(doc) {
+    const d = String(doc ?? '').replace(/\D/g, '');
+    if (!d) return [];
+    const r = new Set([d]);
+    if (d.length < 8) r.add(d.padStart(8, '0'));
+    if (d.length === 11 && d.startsWith('10')) r.add(d.slice(2, 10));
+    return [...r];
+  }
+
+  /** Departamentos de llegada: «22», «San Martín» o varios separados por comas → códigos de 2 dígitos. */
+  function deptosDe(valor) {
+    const lista = Array.isArray(valor) ? valor : String(valor ?? '').split(/[,;|]+/);
+    const sinTilde = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const codigos = [], malos = [];
+    for (const x of lista) {
+      const t = sinTilde(String(x));
+      if (!t) continue;
+      const cod = /^\d{1,2}$/.test(t) ? t.padStart(2, '0') : Object.keys(DEPARTAMENTOS).find((k) => DEPARTAMENTOS[k] === t);
+      if (cod && DEPARTAMENTOS[cod]) { if (!codigos.includes(cod)) codigos.push(cod); } else malos.push(String(x).trim());
+    }
+    if (malos.length) throw new ErrorValidacion(`Departamento de llegada no reconocido: ${malos.join(', ')}. Use el nombre (San Martín) o el código (22).`);
+    return codigos;
+  }
+
   function crearAbortError() {
     try { return new DOMException('Proceso detenido por el usuario', 'AbortError'); }
     catch (_) { const e = new Error('Proceso detenido por el usuario'); e.name = 'AbortError'; return e; }
@@ -411,8 +472,9 @@
     return min + Math.floor(Math.random() * (max - min + 1));
   }
 
-  /** Pausa entre solicitudes (la primera de la ejecución no espera). */
+  /** Pausa entre solicitudes (la primera de la ejecución no espera). Con tope de tiempo, al llegar se detiene. */
   async function esperarTurno(ctx) {
+    if (ctx.limite && Date.now() >= ctx.limite) throw new ErrorTope();
     if (ctx.solicitudes > 0) await dormir(pausaAleatoria(ctx.cfg), ctx.signal);
     ctx.solicitudes++;
   }
@@ -449,6 +511,13 @@
     }
     return n;
   }
+  /** Número con decimales entre min y max (por ejemplo, minutos: «0.5»). */
+  function decimal(valor, nombre, min, max, predeterminado) {
+    if (esVacio(valor)) return predeterminado;
+    const n = Number(String(valor).replace(',', '.'));
+    if (!Number.isFinite(n) || n < min || n > max) throw new ErrorValidacion(`«${nombre}» debe ser un número entre ${min} y ${max}.`);
+    return n;
+  }
   const siNo = (v, def) => (v === undefined ? def : v === true || v === 'true');
 
   /** Revisa, ordena y une los periodos de la búsqueda manual. */
@@ -483,6 +552,12 @@
    *   - directa (por número): { etiqueta, caso, directa: { rucEmisor, codCpe, serie, numero, posterior? } }
    *     «posterior»: el número es mayor que la última guía conocida de la serie (puede no existir todavía).
    * Las fechas pueden ser relativas: «hoy», «ayer» u «hoy-N».
+   * Opcionales:
+   *   - opciones: { soloLista, rellenar, topeMin, deptoLlegada }: mandan sobre las del panel.
+   *   - prioridad: documentos (DNI o RUC) cuyas guías se abren primero si figuran como destinatario
+   *     en el listado. Solo se usa en memoria: no se registra ni se exporta.
+   *   - anclas: guías conocidas de días anteriores { rucEmisor, codCpe, serie, numero, fecha: 'AAAA-MM-DDTHH:MM' },
+   *     para saber desde qué número rellenar un bloque con más de 100 guías.
    */
   function validarPedido(entrada) {
     let p = entrada;
@@ -522,9 +597,29 @@
     });
     if (!busquedas.length) throw new ErrorValidacion('La lista no tiene búsquedas válidas.');
     const conocidas = Array.isArray(p.conocidas) ? p.conocidas.filter((x) => typeof x === 'string' && x) : [];
+    // Opciones de la lista (mandan sobre las del panel)
+    const opciones = {};
+    if (esObjetoPlano(p.opciones)) {
+      const o = p.opciones;
+      if (o.soloLista !== undefined) opciones.soloLista = o.soloLista === true;
+      if (o.rellenar !== undefined) opciones.rellenar = o.rellenar !== false;
+      if (!esVacio(o.topeMin)) opciones.topeMin = decimal(o.topeMin, 'Tope de tiempo de la lista (minutos)', 0, 600, 0);
+      if (o.deptoLlegada !== undefined) opciones.deptoLlegada = deptosDe(o.deptoLlegada);
+    }
+    const prioridad = new Set();
+    for (const d of Array.isArray(p.prioridad) ? p.prioridad : []) for (const x of docsDe(d)) prioridad.add(x);
+    const anclas = [];
+    for (const a of Array.isArray(p.anclas) ? p.anclas : []) {
+      if (!esObjetoPlano(a)) continue;
+      const ruc = limpio(a.rucEmisor), cod = limpio(a.codCpe).toUpperCase(), serie = limpio(a.serie).toUpperCase();
+      const num = Number(limpio(a.numero)), t = momentoDe(null, { fecEmision: limpio(a.fecha) });
+      if (rucValido(ruc) && TIPOS_GRE[cod] && /^[A-Z0-9]{4}$/.test(serie) && Number.isInteger(num) && num > 0 && t) {
+        anclas.push({ rucEmisor: ruc, codCpe: cod, serie, num, t });
+      }
+    }
     return {
       id: limpio(p.id) || 'lista', titulo: limpio(p.titulo) || 'Lista del tablero', generado: limpio(p.generado),
-      busquedas, conocidas, ignoradas
+      busquedas, conocidas, ignoradas, opciones, prioridad, anclas
     };
   }
 
@@ -540,13 +635,33 @@
     t += '.';
     if (p.conocidas.length) t += ` ${p.conocidas.length} guía(s) ya están en el tablero: no se volverán a descargar.`;
     if (p.ignoradas) t += ` Se ignoran ${p.ignoradas} búsqueda(s) con datos no válidos.`;
+    const o = p.opciones || {}, extras = [];
+    if (o.soloLista) extras.push('solo lista (sin abrir las guías)');
+    if (o.deptoLlegada && o.deptoLlegada.length) extras.push(`solo las que llegan a ${o.deptoLlegada.map(nombreDepto).join(', ')}`);
+    if (o.topeMin) extras.push(`tope de ${o.topeMin} minutos`);
+    if (o.rellenar === false) extras.push('sin relleno por número');
+    if (p.prioridad && p.prioridad.size) extras.push('con lista de prioridad');
+    if (extras.length) t += ` Opciones de la lista: ${extras.join('; ')}.`;
     return t;
   }
+
+  const TILDES_DEPTO = { '02': 'Áncash', '03': 'Apurímac', '10': 'Huánuco', '12': 'Junín', '22': 'San Martín' };
+  const nombreDepto = (cod) => TILDES_DEPTO[cod] || (DEPARTAMENTOS[cod] || cod).toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
 
   function normalizarConfig(op = {}) {
     if (!esObjetoPlano(op)) throw new ErrorValidacion('Las opciones deben ser un objeto.');
     const D = CONFIG_PREDETERMINADA;
+    const pedido = op.pedido ? validarPedido(op.pedido) : null;
+    // Opciones nuevas: mandan las de la lista; si la lista no las trae, las del panel; si no, las predeterminadas.
+    const deLista = (pedido && pedido.opciones) || {};
+    const elegir = (k) => (deLista[k] !== undefined ? deLista[k] : op[k]);
     const cfg = {
+      soloLista: siNo(elegir('soloLista'), D.soloLista),
+      rellenar: siNo(elegir('rellenar'), D.rellenar),
+      topeMin: decimal(elegir('topeMin'), 'Tope de tiempo (minutos)', 0, 600, D.topeMin),
+      deptos: deptosDe(elegir('deptoLlegada') ?? D.deptoLlegada),
+      prioridad: pedido ? pedido.prioridad : new Set(),
+      anclas: pedido ? pedido.anclas : [],
       numSerie: limpio(op.numSerie ?? op.serie).toUpperCase(),
       numCpe: limpio(op.numCpe ?? op.numero),
       codEstado: limpio(op.codEstado),
@@ -577,9 +692,9 @@
     }
     if (cfg.numCpe && !/^\d+$/.test(cfg.numCpe)) throw new ErrorValidacion('El número de guía debe tener solo dígitos.');
 
-    if (op.pedido) {
+    if (pedido) {
       // Lista copiada del tablero
-      const p = validarPedido(op.pedido);
+      const p = pedido;
       if (p.ignoradas) log(`Se ignoran ${p.ignoradas} búsqueda(s) de la lista con datos no válidos.`, 'warn');
       cfg.origen = 'tablero';
       cfg.busquedas = p.busquedas;
@@ -703,8 +818,9 @@
   /** Parámetros que sí pueden exportarse (nunca el token). */
   function parametrosExportables(cfg) {
     if (!cfg) return {};
+    // Nunca la lista de prioridad ni las anclas: solo se usan en memoria.
     const claves = ['origen', 'rucs', 'rol', 'tipos', 'periodos', 'numSerie', 'numCpe', 'codEstado', 'codSubEstado',
-      'tipBusqueda', 'perPage', 'maxDiasBloque', 'pausaMinMs', 'pausaMaxMs', 'maxReintentos'];
+      'tipBusqueda', 'perPage', 'maxDiasBloque', 'pausaMinMs', 'pausaMaxMs', 'maxReintentos', 'soloLista', 'rellenar', 'topeMin', 'deptos'];
     const r = {};
     for (const k of claves) if (cfg[k] !== undefined) r[k] = Array.isArray(cfg[k]) ? JSON.parse(JSON.stringify(cfg[k])) : cfg[k];
     return r;
@@ -1232,6 +1348,7 @@
     const { cfg } = ctx;
     const P = estado.progreso;
     const encontradas = new Map();
+    estado.encontradas = encontradas; // se conserva aunque se detenga a mitad de la búsqueda
     const aprendizaje = new Map(); // por combinación de RUC y tipos: tamaño de tramo que funciona
     const listados = cfg.busquedas.filter((b) => b.tipo === 'listado');
     const directas = cfg.busquedas.filter((b) => b.tipo === 'directa');
@@ -1346,6 +1463,41 @@
     lista.push({ tipo, guia, campo, valorListado: texto(valorListado), valorDetalle: texto(valorDetalle), detalle });
   }
 
+  /** Ubigeo de llegada de una guía (del detalle), solo dígitos. */
+  const llegadaDe = (det) => datosDireccion(obtener(det || {}, 'traslado.llegada')).ubigeo.replace(/\D/g, '');
+
+  /** Con filtro de destino: ¿la guía llega a uno de los departamentos pedidos? Si no trae ubigeo de llegada, se guarda. */
+  function llegaAlDestino(cfg, det) {
+    if (!cfg.deptos || !cfg.deptos.length) return true;
+    const u = llegadaDe(det);
+    return !u || cfg.deptos.includes(u.slice(0, 2));
+  }
+
+  /** Guía abierta que no llega al destino: no se guarda su detalle, solo la clave y el ubigeo de llegada. */
+  function marcarFuera(reg, ubigeo) {
+    Object.assign(reg, { ok: false, detalle: null, procesada: true, fueraDestino: true, llegada: ubigeo || '', error: '' });
+    estado.fueraVistas.set(reg.clave, ubigeo || '');
+    estado.progreso.fuera++;
+  }
+
+  /**
+   * Guías encontradas → lista de trabajo. Con lista de prioridad, primero las guías cuyo destinatario del
+   * listado figura en ella (DNI o RUC; un RUC 10 contiene el DNI); el resto mantiene el orden de las búsquedas.
+   */
+  function prepararUnicos(encontradas) {
+    const prio = estado.config && estado.config.prioridad;
+    const lista = [...encontradas.entries()].map(([clave, item]) => ({ clave, item, prioritaria: false }));
+    if (prio && prio.size) {
+      for (const u of lista) u.prioritaria = !u.item.__directa && docsDe(u.item.rucReceptor).some((d) => prio.has(d));
+      lista.sort((a, b) => Number(b.prioritaria) - Number(a.prioritaria)); // orden estable: el resto no cambia
+    }
+    estado.unicos = lista;
+    for (const { clave, item, prioritaria } of lista) {
+      if (!estado.resultados.has(clave)) estado.resultados.set(clave, crearRegistro(clave, item, prioritaria ? { prioritaria: true } : {}));
+    }
+    return lista.filter((u) => u.prioritaria).length;
+  }
+
   /** Compara campos clave del listado con el detalle. */
   function compararListadoDetalle(clave, item, det) {
     if (!esObjetoPlano(item) || !esObjetoPlano(det) || item.__directa) return;
@@ -1388,12 +1540,27 @@
       // Ya obtenida antes (archivo anterior o ejecución anterior de esta sesión)
       const pv = yaObtenida(clave);
       if (pv) {
+        if (!llegaAlDestino(cfg, pv.detalle)) {
+          Object.assign(reg, { http: 'REUTILIZADA', consultadoEn: pv.consultadoEn, origen: estado.previos.has(clave) ? 'previo' : 'memoria' });
+          marcarFuera(reg, llegadaDe(pv.detalle));
+          P.omitidas++; P.procesadas++;
+          actualizarUI();
+          continue;
+        }
         Object.assign(reg, {
           detalle: pv.detalle, ok: true, procesada: true, http: 'REUTILIZADA',
           consultadoEn: pv.consultadoEn, origen: estado.previos.has(clave) ? 'previo' : 'memoria'
         });
         compararListadoDetalle(clave, item, pv.detalle);
         P.omitidas++; P.ok++; P.procesadas++;
+        actualizarUI();
+        continue;
+      }
+      // Ya abierta en esta sesión y no llega al destino: no se vuelve a consultar
+      if (cfg.deptos.length && estado.fueraVistas.has(clave)) {
+        Object.assign(reg, { http: 'REUTILIZADA', origen: 'memoria' });
+        marcarFuera(reg, estado.fueraVistas.get(clave));
+        P.omitidas++; P.procesadas++;
         actualizarUI();
         continue;
       }
@@ -1440,13 +1607,18 @@
 
       const dijoNoExiste = r.ok && esObjetoPlano(r.data) && !pareceDetalle(r.data) && NO_EXISTE.test(JSON.stringify(r.data).slice(0, 2000));
       if (r.ok && esObjetoPlano(r.data) && (!item.__directa || pareceDetalle(r.data))) {
-        reg.ok = true;
-        reg.detalle = r.data;
-        P.ok++;
         consecutivos = 0;
         if (item.__directa) series.set(serieDe(item), { racha: 0, ultimo: 0, cerrada: false });
-        compararListadoDetalle(clave, item, r.data);
-        log(`${P.procesadas + 1}/${P.total} ${etiqueta} OK (${obtenerBienes(r.data).length} bien(es))`, 'debug');
+        if (!llegaAlDestino(cfg, r.data)) {
+          marcarFuera(reg, llegadaDe(r.data));
+          log(`${P.procesadas + 1}/${P.total} ${etiqueta}: llega a otro departamento (no se guarda)`, 'debug');
+        } else {
+          reg.ok = true;
+          reg.detalle = r.data;
+          P.ok++;
+          compararListadoDetalle(clave, item, r.data);
+          log(`${P.procesadas + 1}/${P.total} ${etiqueta} OK (${obtenerBienes(r.data).length} bien(es))`, 'debug');
+        }
       } else if (item.__directa && (r.noExiste || r.status === 404 || dijoNoExiste)) {
         // La guía no existe: es una respuesta válida de SUNAT (número aún no emitido, guía física o de otro tipo)
         reg.noExiste = true;
@@ -1481,6 +1653,226 @@
   }
 
   /* ---------------------------------------------------------------
+   * 8b. Bloques con más de 100 guías: relleno por número
+   *     Los números de cada serie son correlativos. Las guías del emisor de antes y de
+   *     después del bloque (de los bloques que sí se pudieron consultar, o de días
+   *     anteriores que trae la lista) dicen qué números se emitieron dentro: se piden
+   *     uno por uno (la consulta por número no tiene el límite de 100).
+   * ------------------------------------------------------------- */
+  /** Bloques excedidos de una búsqueda, por tipo de guía; los bloques seguidos del mismo día se unen. */
+  function ventanasExcedidas(tarea) {
+    const porTipo = new Map();
+    for (const x of tarea.tramosExcedidos) {
+      if (!porTipo.has(x.tipo)) porTipo.set(x.tipo, []);
+      porTipo.get(x.tipo).push({ ...ventanaDe(x.dia, x.bloque), dia: x.dia, bloques: [x.bloque] });
+    }
+    for (const [tipo, vs] of porTipo) {
+      vs.sort((a, b) => a.ini.localeCompare(b.ini));
+      const unidas = [];
+      for (const v of vs) {
+        const u = unidas[unidas.length - 1];
+        if (u && u.dia === v.dia && u.bloques[u.bloques.length - 1] + 1 === v.bloques[0]) { u.fin = v.fin; u.bloques.push(...v.bloques); }
+        else unidas.push({ ...v, bloques: [...v.bloques] });
+      }
+      porTipo.set(tipo, unidas);
+    }
+    return porTipo;
+  }
+
+  /** Guías conocidas de un emisor y tipo, por serie: serie -> Map(número -> «AAAA-MM-DDTHH:MM»). */
+  function guiasConocidasPorSerie(rucEmisor, tipo, cfg) {
+    const series = new Map();
+    const agregar = (serie, num, t) => {
+      const n = Number(num);
+      if (!serie || !Number.isInteger(n) || n <= 0 || !t) return;
+      if (!series.has(serie)) series.set(serie, new Map());
+      series.get(serie).set(n, t);
+    };
+    for (const it of estado.encontradas.values()) {
+      if (it.__directa || texto(it.rucEmisor).trim() !== rucEmisor || texto(it.codCpe).trim() !== tipo) continue;
+      agregar(texto(it.numSerie).trim(), it.numCpe, momentoDe(null, it));
+    }
+    for (const r of estado.resultados.values()) {
+      if (!r.relleno || !r.momento) continue;
+      const [ruc, cod, serie, num] = r.clave.split('-');
+      if (ruc === rucEmisor && cod === tipo) agregar(serie, num, r.momento);
+    }
+    for (const a of cfg.anclas || []) if (a.rucEmisor === rucEmisor && a.codCpe === tipo) agregar(a.serie, a.num, a.t);
+    return series;
+  }
+
+  /**
+   * Qué números pedir para cubrir los bloques excedidos de una búsqueda. Por serie y bloque:
+   *   - hueco: hay guías antes y después → los números intermedios;
+   *   - adelante: solo hay guías antes → desde la siguiente, hasta pasar el bloque (o hasta que dejen de existir);
+   *   - atrás: solo hay guías después → hacia atrás, hasta quedar antes del bloque.
+   * Una serie que no aparece en ninguna guía conocida no se puede rellenar (se avisa en el resumen).
+   */
+  function planesRelleno(tarea, cfg) {
+    const planes = [];
+    for (const [tipo, ventanas] of ventanasExcedidas(tarea)) {
+      const series = guiasConocidasPorSerie(tarea.rucEmisor, tipo, cfg);
+      if (!series.size) {
+        planes.push({ k: `${tipo}|sin_series`, tipo, serie: '', modo: 'sin_series', desde: '', hasta: '', ventanas, rucEmisor: tarea.rucEmisor, etiqueta: tarea.etiqueta });
+        continue;
+      }
+      for (const v of ventanas) {
+        for (const [serie, nums] of series) {
+          let prev = null, next = null;
+          for (const [num, t] of nums) {
+            if (t < v.ini && (!prev || num > prev.num)) prev = { num, t };
+            if (t > v.fin && (!next || num < next.num)) next = { num, t };
+          }
+          let plan = null;
+          if (prev && next) {
+            if (next.num - prev.num === 1) continue; // la serie no emitió dentro del bloque
+            plan = next.num < prev.num || next.num - prev.num - 1 > MAX_HUECO_RELLENO
+              ? { modo: 'omitido', desde: prev.num + 1, hasta: next.num - 1 }
+              : { modo: 'hueco', desde: prev.num + 1, hasta: next.num - 1 };
+          } else if (prev) plan = { modo: 'adelante', desde: prev.num + 1, hasta: '' };
+          else if (next && next.num > 1) plan = { modo: 'atras', desde: next.num - 1, hasta: '' };
+          if (!plan) continue;
+          const k = `${tipo}|${serie}|${plan.modo}|${plan.desde}|${plan.hasta}`;
+          const igual = planes.find((p) => p.k === k);
+          if (igual) { igual.ventanas.push(v); continue; } // el mismo hueco cubre varios bloques
+          planes.push({ k, tipo, serie, ...plan, ventanas: [v], rucEmisor: tarea.rucEmisor, etiqueta: tarea.etiqueta });
+        }
+      }
+    }
+    return planes;
+  }
+
+  function nuevaFilaRelleno(pl) {
+    const fila = {
+      etiqueta: pl.etiqueta, rucEmisor: pl.rucEmisor, tipo: pl.tipo, serie: pl.serie, modo: pl.modo,
+      bloques: pl.ventanas.map((v) => `${dmy(v.dia)} ${v.bloques.map((b) => TEXTO_BLOQUE[b]).join(', ')}`).join(' · '),
+      desde: pl.desde, hasta: pl.hasta, estimadas: pl.modo === 'hueco' || pl.modo === 'omitido' ? pl.hasta - pl.desde + 1 : '',
+      consultadas: 0, obtenidas: 0, fuera: 0, noExisten: 0, yaConocidas: 0, errores: 0, siguiente: pl.desde, terminado: false
+    };
+    estado.relleno.push(fila);
+    return fila;
+  }
+
+  /** Arma los planes de relleno de todas las búsquedas con bloques excedidos. Con «solo lista», solo estima. */
+  function planificarRelleno(cfg) {
+    const tareas = estado.tareas.filter((t) => t.tramosExcedidos && t.tramosExcedidos.length);
+    if (!tareas.length) return [];
+    const comoDestinatario = tareas.filter((t) => !t.rucEmisor);
+    if (comoDestinatario.length) {
+      log(`${comoDestinatario.length} búsqueda(s) por destinatario tienen bloques con más de 100 guías: no se pueden pedir por número (son guías de muchos emisores).`, 'warn');
+    }
+    const planes = tareas.filter((t) => t.rucEmisor).flatMap((t) => planesRelleno(t, cfg));
+    const estimadas = planes.filter((p) => p.modo === 'hueco').reduce((s, p) => s + (p.hasta - p.desde + 1), 0);
+    const abiertos = planes.filter((p) => p.modo === 'adelante' || p.modo === 'atras').length;
+    if (planes.length) {
+      log(`Bloques con más de 100 guías: ${estimadas} número(s) por pedir en ${planes.filter((p) => p.modo === 'hueco').length} hueco(s)` +
+        (abiertos ? ` y ${abiertos} serie(s) en el borde del periodo (se siguen hasta salir del bloque)` : '') + '.', 'ok');
+    }
+    for (const p of planes.filter((x) => x.modo === 'omitido')) {
+      log(`Serie ${p.serie}: el hueco entre ${p.desde - 1} y ${p.hasta + 1} no es correlativo o es demasiado grande; no se rellena.`, 'warn');
+    }
+    if (planes.some((p) => p.modo === 'sin_series')) log('Algún bloque excedido es de un tipo de guía sin guías conocidas: no se sabe qué series pedir.', 'warn');
+    estado.progreso.rellenoTotal = estimadas;
+    return planes;
+  }
+
+  /** Pide por número las guías de un plan. Las que llegan a otro departamento (con filtro) no se guardan. */
+  async function ejecutarRelleno(ctx, pl, fila) {
+    const { cfg, signal } = ctx;
+    const P = estado.progreso;
+    const ini = pl.ventanas.reduce((m, v) => (v.ini < m ? v.ini : m), pl.ventanas[0].ini);
+    const fin = pl.ventanas.reduce((m, v) => (v.fin > m ? v.fin : m), pl.ventanas[0].fin);
+    const conocidas = new Set(cfg.conocidas || []);
+    const origen = { etiqueta: `${pl.etiqueta} (por número)`, caso: '', grupo: 'relleno' };
+    const paso = pl.modo === 'atras' ? -1 : 1;
+    let n = pl.desde, racha = 0, errores = 0;
+    while (n >= 1 && (pl.modo !== 'hueco' || n <= pl.hasta)) {
+      if (signal.aborted) throw crearAbortError();
+      fila.siguiente = n;
+      const clave = claveGuia(pl.rucEmisor, pl.tipo, pl.serie, n);
+      const ya = estado.resultados.get(clave);
+      if (ya || conocidas.has(clave)) {
+        fila.yaConocidas++;
+        const t = ya ? (ya.momento || momentoDe(ya.detalle, ya.listado)) : '';
+        if (t && ((pl.modo === 'adelante' && t > fin) || (pl.modo === 'atras' && t < ini))) break;
+        n += paso;
+        continue;
+      }
+      const pv = estado.previos.get(clave) || estado.memoria.get(clave);
+      let det = pv ? pv.detalle : null, http = pv ? 'REUTILIZADA' : '', intentos = 0, noExiste = false, mensaje = '';
+      if (!det && cfg.deptos.length && estado.fueraVistas.has(clave)) {
+        // Ya abierta en esta sesión y llega a otro departamento: no se vuelve a pedir
+        const reg = crearRegistro(clave, null, { relleno: true, origen: 'memoria', procesada: true, http: 'REUTILIZADA' });
+        estado.resultados.set(clave, reg);
+        marcarFuera(reg, estado.fueraVistas.get(clave));
+        fila.fuera++;
+        n += paso;
+        continue;
+      }
+      if (!det) {
+        await esperarTurno(ctx);
+        const item = { rucEmisor: pl.rucEmisor, codCpe: pl.tipo, numSerie: pl.serie, numCpe: String(n) };
+        const etiqueta = guiaLegible(pl.serie, n);
+        P.actual = etiqueta;
+        const r = await pedirJSON(construirUrlDetalle(item), ctx, etiqueta, clave, { directa: true });
+        fila.consultadas++; P.consultadas++; P.rellenoHechos++;
+        http = r.status; intentos = r.intentos;
+        const dijoNoExiste = r.ok && esObjetoPlano(r.data) && !pareceDetalle(r.data) && NO_EXISTE.test(JSON.stringify(r.data).slice(0, 2000));
+        if (r.ok && pareceDetalle(r.data)) det = r.data;
+        else if (r.noExiste || r.status === 404 || dijoNoExiste) noExiste = true;
+        else mensaje = r.ok ? 'La respuesta no contiene el detalle de la guía' : r.mensaje;
+      }
+      if (det) {
+        racha = 0; errores = 0;
+        const t = momentoDe(det, null);
+        const reg = crearRegistro(clave, null, {
+          relleno: true, procesada: true, http, intentos, momento: t,
+          origen: pv ? (estado.previos.has(clave) ? 'previo' : 'memoria') : 'relleno', consultadoEn: pv ? pv.consultadoEn : fechaHoraLocal()
+        });
+        estado.resultados.set(clave, reg);
+        if (!estado.origenes.has(clave)) estado.origenes.set(clave, []);
+        estado.origenes.get(clave).push(origen);
+        if (llegaAlDestino(cfg, det)) { Object.assign(reg, { ok: true, detalle: det }); fila.obtenidas++; P.ok++; P.relleno++; }
+        else { marcarFuera(reg, llegadaDe(det)); fila.fuera++; }
+        if (t && ((pl.modo === 'adelante' && t > fin) || (pl.modo === 'atras' && t < ini))) { n += paso; break; }
+      } else if (noExiste) {
+        fila.noExisten++;
+        racha++;
+        if (pl.modo !== 'hueco' && racha >= cfg.maxNoExistenSerie) { n += paso; break; }
+      } else {
+        fila.errores++; errores++;
+        registrarError({ guia: guiaLegible(pl.serie, n), clave, url: '', estadoHttp: http, mensaje, intento: intentos, accion: 'OMITIDA (pedida por número)' });
+        if (errores >= cfg.maxErroresConsecutivos) {
+          throw new ErrorDetencion(`Se detuvo tras ${errores} errores seguidos al pedir guías por número (posible problema de red o de SUNAT). Lo obtenido se conserva.`);
+        }
+      }
+      actualizarUI();
+      n += paso;
+    }
+    fila.siguiente = n;
+    fila.terminado = true;
+  }
+
+  /** Fase 3: relleno por número de los bloques con más de 100 guías. */
+  async function rellenarTramos(ctx) {
+    const planes = planificarRelleno(ctx.cfg);
+    const filas = planes.map((p) => [p, nuevaFilaRelleno(p)]);
+    for (const [p, fila] of filas) {
+      if (p.modo === 'omitido' || p.modo === 'sin_series') { fila.terminado = true; continue; }
+      await ejecutarRelleno(ctx, p, fila);
+    }
+    const ok = filas.reduce((s, [, f]) => s + f.obtenidas, 0), fuera = filas.reduce((s, [, f]) => s + f.fuera, 0);
+    if (filas.length) log(`Guías pedidas por número: ${ok} guardada(s)${fuera ? `, ${fuera} llegan a otro departamento` : ''}.`, 'ok');
+  }
+
+  /** Números que quedaron sin pedir (tope de tiempo o detención). */
+  function pendientesRelleno(f) {
+    if (f.terminado || f.modo === 'omitido' || f.modo === 'sin_series') return 0;
+    if (f.modo === 'hueco') return Math.max(0, Number(f.hasta) - Number(f.siguiente) + 1);
+    return 1; // serie en el borde del periodo: no se sabe cuántos faltaban
+  }
+
+  /* ---------------------------------------------------------------
    * 9. Proceso principal
    * ------------------------------------------------------------- */
   function reiniciarEstado(cfg) {
@@ -1504,6 +1896,8 @@
     estado.fallosRedSeguidos = 0;
     estado.huboBusquedaCorrecta = false;
     estado.mensajesExceso = new Set();
+    estado.encontradas = new Map();
+    estado.relleno = [];
     estado.tokenExp = null;
     estado.controller = new AbortController();
   }
@@ -1567,24 +1961,47 @@
       const nombresExtra = Object.keys(ctx.cabecerasExtra || {});
       if (nombresExtra.length) log(`Cabeceras de la aplicación que se envían: ${nombresExtra.join(', ')}.`, 'debug');
 
+      if (cfg.topeMin) {
+        ctx.limite = estado.tiempos.inicio + cfg.topeMin * 60000;
+        log(`Tope de tiempo: ${cfg.topeMin} minuto(s); a las ${horaDe(ctx.limite)} se detiene, guarda y descarga lo obtenido.`);
+      }
+      if (cfg.deptos.length) log(`Se guardan solo las guías que llegan a ${cfg.deptos.map(nombreDepto).join(', ')}; las demás solo se cuentan.`);
+
       // Fase 1: buscar las guías
       estado.fase = 'busqueda';
       actualizarUI();
       const encontradas = await buscarTodo(ctx);
-      estado.unicos = [...encontradas.entries()].map(([clave, item]) => ({ clave, item }));
-      for (const { clave, item } of estado.unicos) estado.resultados.set(clave, crearRegistro(clave, item));
+      const prioritarias = prepararUnicos(encontradas);
       log(`Búsqueda terminada: ${estado.unicos.length} guía(s) encontradas.`, 'ok');
+      if (prioritarias) log(`${prioritarias} guía(s) tienen un destinatario de la lista de prioridad: se abren primero.`, 'ok');
 
-      // Fase 2: detalle de cada guía
-      estado.fase = 'detalle';
-      actualizarUI();
-      await obtenerDetalles(ctx);
-      estado.motivoFin = 'COMPLETADO';
-      log('Extracción completada.', 'ok');
+      if (cfg.soloLista) {
+        // Diagnóstico: no se abre ninguna guía; los bloques con más de 100 se estiman por la numeración
+        for (const r of estado.resultados.values()) if (!r.procesada) r.soloListado = true;
+        planificarRelleno(cfg).forEach(nuevaFilaRelleno);
+        estado.motivoFin = 'SOLO_LISTA';
+        log('Solo lista: no se abrió ninguna guía.', 'ok');
+      } else {
+        // Fase 2: detalle de cada guía (las de la lista de prioridad primero)
+        estado.fase = 'detalle';
+        actualizarUI();
+        await obtenerDetalles(ctx);
+        // Fase 3: bloques con más de 100 guías, por número
+        if (cfg.rellenar) {
+          estado.fase = 'relleno';
+          actualizarUI();
+          await rellenarTramos(ctx);
+        }
+        estado.motivoFin = 'COMPLETADO';
+        log('Extracción completada.', 'ok');
+      }
     } catch (e) {
       if (esAbort(e)) {
         estado.motivoFin = 'CANCELADO';
-        log('Proceso detenido. Lo obtenido se conserva y puede descargarlo.', 'warn');
+        log('Proceso detenido. Lo obtenido se conserva y puede descargarlo (⬇ JSON o ⬇ Excel).', 'warn');
+      } else if (e instanceof ErrorTope) {
+        estado.motivoFin = 'TOPE';
+        log(`Se llegó al tope de ${estado.config ? estado.config.topeMin : ''} minuto(s): se guarda y descarga lo obtenido. Lo que faltó queda anotado en el resumen.`, 'warn');
       } else if (e instanceof ErrorAutenticacion) {
         estado.motivoFin = e.codigo;
         log(`${e.message} Proceso detenido; lo ya obtenido se conserva.`, 'error');
@@ -1615,6 +2032,11 @@
       estado.fase = '';
       if (iniciado) {
         estado.tiempos.fin = Date.now();
+        // Detenido a mitad de la búsqueda: se conserva lo ya encontrado (sin detalle)
+        if (!estado.unicos.length && estado.encontradas.size) {
+          prepararUnicos(estado.encontradas);
+          log(`Se conservan ${estado.unicos.length} guía(s) encontradas antes de detenerse (sin abrir).`, 'ok');
+        }
         try { finalizar(); } catch (e) { log(`Error al preparar el resumen: ${e.message}`, 'error'); }
         const hayDatos = estado.resultados.size > 0;
         if (estado.motivoFin !== 'CANCELADO' && hayDatos) {
@@ -1672,8 +2094,14 @@
       if (TIPO_CONTROL_BUSQUEDA[b.tipo]) agregarControl(C, TIPO_CONTROL_BUSQUEDA[b.tipo], b.etiqueta, tramo, '', b.estadoHttp, b.mensaje);
     }
     for (const d of estado.duplicados) agregarControl(C, 'GUIA_REPETIDA_EN_BUSQUEDA', d, 'clave', d, '', 'Registro duplicado eliminado');
+    for (const f of estado.relleno) {
+      const pend = pendientesRelleno(f);
+      if (f.modo === 'omitido') agregarControl(C, 'BLOQUE_SIN_RELLENAR', f.etiqueta, `${f.bloques} · serie ${f.serie}`, `${f.desde}-${f.hasta}`, '', 'Numeración no correlativa o hueco demasiado grande');
+      else if (f.modo === 'sin_series') agregarControl(C, 'BLOQUE_SIN_RELLENAR', f.etiqueta, f.bloques, '', '', 'No hay guías conocidas de ese tipo: no se sabe qué series pedir');
+      else if (pend && estado.motivoFin !== 'SOLO_LISTA') agregarControl(C, 'RELLENO_PENDIENTE', f.etiqueta, `${f.bloques} · serie ${f.serie}`, f.modo === 'hueco' ? `${f.siguiente}-${f.hasta}` : `desde ${f.siguiente}`, String(pend), `Quedó sin pedir (${textoMotivo(estado.motivoFin)})`);
+    }
     for (const r of estado.resultados.values()) {
-      if (r.origen === 'conocida' || r.noConsultada) continue;
+      if (r.origen === 'conocida' || r.noConsultada || r.fueraDestino || r.soloListado) continue;
       if (!r.procesada) agregarControl(C, 'GUIA_NO_PROCESADA', r.clave, '', '', '', `Proceso finalizado como ${textoMotivo(estado.motivoFin)}`);
       else if (!r.ok) agregarControl(C, r.noExiste ? 'GUIA_NO_EXISTE' : r.directa ? 'GUIA_CITADA_SIN_DETALLE' : 'GUIA_SIN_DETALLE', r.clave, 'HTTP', '', r.http, r.error);
       else if (obtenerBienes(r.detalle).length === 0) agregarControl(C, 'GUIA_SIN_BIENES', r.clave, 'traslado.bien', '', '0', 'La guía no tiene bienes');
@@ -1685,6 +2113,7 @@
   function textoMotivo(m) {
     return {
       EN_CURSO: 'En curso', COMPLETADO: 'Completado', CANCELADO: 'Detenido por el usuario', DETENIDO: 'Detenido por un problema',
+      TOPE: 'Detenido al llegar al tope de tiempo', SOLO_LISTA: 'Solo lista (sin abrir las guías)',
       DETENIDO_SIN_CONEXION: 'Detenido: no se renovó la conexión', DETENIDO_HTTP_401: 'Detenido: SUNAT no aceptó la conexión',
       DETENIDO_HTTP_403: 'Detenido: sin permiso (HTTP 403)', ERROR: 'Detenido por un error'
     }[m] || m || '';
@@ -1712,7 +2141,13 @@
       'Guías con error': regs.filter((r) => r.procesada && !r.ok && r.origen !== 'conocida' && !r.noExiste && !r.noConsultada).length,
       'Guías que no existen (consulta por número)': regs.filter((r) => r.noExiste).length,
       'Números no consultados (fin de la serie)': regs.filter((r) => r.noConsultada).length,
-      'Guías no procesadas': regs.filter((r) => !r.procesada).length,
+      'Guías no procesadas': regs.filter((r) => !r.procesada && !r.soloListado).length,
+      'Bloques de 4 horas con más de 100 guías': estado.tareas.reduce((s, t) => s + t.tramosExcedidos.length, 0),
+      'Números pedidos uno por uno en esos bloques': estado.relleno.reduce((s, f) => s + f.consultadas, 0),
+      'Guías obtenidas por número': regs.filter((r) => r.relleno && r.ok).length,
+      'Números que quedaron por pedir': estado.relleno.reduce((s, f) => s + pendientesRelleno(f), 0),
+      'Guías que llegan a otro departamento (no se guardan)': regs.filter((r) => r.fueraDestino).length,
+      'Guías solo del listado (sin abrir)': regs.filter((r) => r.soloListado).length,
       'Total de bienes': ok.reduce((s, r) => s + obtenerBienes(r.detalle).length, 0),
       'Guías sin bienes': ok.filter((r) => obtenerBienes(r.detalle).length === 0).length,
       'Observaciones de control': estado.control.length,
@@ -1735,9 +2170,13 @@
     }
     return estado.tareas.map((t) => {
       const c = conteo.get(t.etiqueta) || { ok: 0, error: 0, tablero: 0 };
+      const rell = estado.relleno.filter((f) => f.etiqueta === t.etiqueta);
+      const porNumero = rell.reduce((s, f) => s + f.obtenidas + f.fuera, 0), faltan = rell.reduce((s, f) => s + pendientesRelleno(f), 0);
       const observacion = [
         t.rechazo && `SUNAT rechazó la búsqueda: ${t.rechazo}`,
-        t.tramosExcedidos.length && `${t.tramosExcedidos.length} tramo(s) de 4 horas con más de 100 guías`,
+        t.tramosExcedidos.length && `${t.tramosExcedidos.length} tramo(s) de 4 horas con más de 100 guías` +
+          (estado.motivoFin === 'SOLO_LISTA' ? (faltan ? ` (se estiman ${faltan} guía(s) por la numeración)` : '')
+            : rell.length ? ` (${porNumero} pedida(s) por número${faltan ? `, ${faltan} número(s) quedaron por pedir` : ''})` : ''),
         t.diasRechazados.length && `${t.diasRechazados.length} día(s) rechazados`,
         t.fallidas && `${t.fallidas} consulta(s) sin respuesta`,
         c.tablero && `${c.tablero} ya en el tablero`
@@ -2100,7 +2539,8 @@
 
   /** Reúne todos los datos en tablas (filas como objetos), para Excel y CSV. */
   function prepararTablas() {
-    const regs = [...estado.resultados.values()];
+    // Las guías que llegan a otro departamento (con filtro de destino) no se guardan: solo se cuentan
+    const regs = [...estado.resultados.values()].filter((r) => !r.fueraDestino);
     const fGuias = regs.map(filaGuia);
     const fBienes = regs.flatMap(filasBienes);
     const colsErr = ['Guía', 'Clave', 'URL', 'Estado HTTP', 'Mensaje', 'Número de intento', 'Fecha y hora', 'Acción tomada'];
@@ -2123,11 +2563,22 @@
     }));
     const colecciones = new Map();
     for (const r of regs) if (r.ok && r.detalle) recolectarColecciones(r, colecciones);
+    const MODO_RELLENO = { hueco: 'Entre dos guías conocidas', adelante: 'Hacia adelante desde la última conocida', atras: 'Hacia atrás desde la primera conocida', omitido: 'No se rellena (numeración rara)', sin_series: 'Sin series conocidas' };
+    const colsRell = ['Búsqueda', 'RUC emisor', 'Tipo', 'Serie', 'Bloques', 'Cómo', 'Desde número', 'Hasta número', 'Números estimados',
+      'Pedidos', 'Guardadas', 'Llegan a otro departamento', 'No existen', 'Ya conocidas', 'Con error', 'Quedaron por pedir'];
+    const fRell = estado.relleno.map((f) => ({
+      'Búsqueda': f.etiqueta, 'RUC emisor': f.rucEmisor, 'Tipo': TIPOS_GRE[f.tipo] || f.tipo, 'Serie': f.serie, 'Bloques': f.bloques,
+      'Cómo': MODO_RELLENO[f.modo] || f.modo, 'Desde número': f.desde, 'Hasta número': f.hasta, 'Números estimados': f.estimadas,
+      'Pedidos': f.consultadas, 'Guardadas': f.obtenidas, 'Llegan a otro departamento': f.fuera, 'No existen': f.noExisten,
+      'Ya conocidas': f.yaConocidas, 'Con error': f.errores,
+      'Quedaron por pedir': estado.motivoFin === 'SOLO_LISTA' ? '' : (f.modo === 'hueco' || f.terminado ? pendientesRelleno(f) : 'sin terminar')
+    }));
     return {
       guias: { columnas: unirColumnas(COLUMNAS_GUIAS, fGuias), filas: fGuias },
       bienes: { columnas: unirColumnas(COLUMNAS_BIENES, fBienes), filas: fBienes },
       errores: { columnas: colsErr, filas: fErr },
       busquedas: { columnas: colsBusq, filas: fBusq },
+      relleno: { columnas: colsRell, filas: fRell },
       control: { columnas: colsCtl, filas: fCtl },
       colecciones: [...colecciones].map(([nombre, filas]) => ({ nombre, columnas: unirColumnas(COLUMNAS_COLECCION, filas), filas })),
       resumen: estado.resumen || calcularResumen(),
@@ -2152,10 +2603,13 @@
    */
   function construirJSON() {
     const cfg = estado.config;
-    const guias = [...estado.resultados.values()].map((r) => ({
+    const guias = [...estado.resultados.values()].map((r) => (r.fueraDestino ? {
+      // Abierta y llega a otro departamento: solo la clave (para no volver a abrirla) y el ubigeo de llegada
+      clave: r.clave, estado: 'fuera_de_destino', llegada: r.llegada || '', busquedas: estado.origenes.get(r.clave) || [], origen: r.origen
+    } : {
       clave: r.clave,
       estado: r.ok ? 'con_detalle' : r.origen === 'conocida' ? 'ya_en_tablero' : r.noExiste ? 'no_existe' : r.noConsultada ? 'no_consultada'
-        : r.procesada ? 'sin_detalle' : 'no_procesada',
+        : r.soloListado ? 'solo_listado' : r.procesada ? 'sin_detalle' : 'no_procesada',
       citadaEnFactura: !!r.directa || (estado.origenes.get(r.clave) || []).some((o) => o.citada), // también si la halló una búsqueda
       listado: r.directa || !r.listado ? null : r.listado,
       detalle: r.ok ? r.detalle : null,
@@ -2173,6 +2627,8 @@
       pedido: cfg ? cfg.pedidoInfo : null,
       parametros: parametrosExportables(cfg),
       busquedas: estado.busquedas,
+      // Bloques con más de 100 guías pedidos por número (o estimados, con «solo lista»)
+      relleno: estado.relleno.map((f) => ({ ...f, pendientes: pendientesRelleno(f) })),
       guias,
       errores: estado.errores,
       control: estado.control,
@@ -2408,6 +2864,7 @@
       hojas.push(tablaAHoja(nombre, col));
     }
     hojas.push(tablaAHoja('Búsquedas', tablas.busquedas));
+    if (tablas.relleno.filas.length) hojas.push(tablaAHoja('Por número', tablas.relleno));
     if (tablas.errores.filas.length) hojas.push(tablaAHoja('Errores', tablas.errores));
     hojas.push(tablaAHoja('Control', tablas.control));
     return construirXlsx(hojas);
@@ -2447,6 +2904,7 @@
     agregar('bienes', 'GRE_BIENES', tablas.bienes);
     agregar('errores', 'GRE_ERRORES', tablas.errores);
     agregar('busquedas', 'GRE_BUSQUEDAS', tablas.busquedas);
+    if (tablas.relleno.filas.length) agregar('relleno', 'GRE_POR_NUMERO', tablas.relleno);
     const filasControl = Object.entries(tablas.resumen).map(([k, v]) => ({ 'Tipo': 'RESUMEN', 'Guía': '', 'Campo': k.trim(), 'Valor listado': texto(v), 'Valor detalle': '', 'Detalle': '' }));
     agregar('control', 'GRE_CONTROL', { columnas: tablas.control.columnas, filas: [...filasControl, ...tablas.control.filas] });
     for (const col of tablas.colecciones) agregar('adicionales', col.nombre, col);
@@ -2576,6 +3034,7 @@
     estado.tareas = []; estado.busquedas = [];
     estado.errores = []; estado.control = []; estado.controlDetalle = [];
     estado.unicos = []; estado.duplicados = [];
+    estado.encontradas = new Map(); estado.relleno = []; estado.fueraVistas = new Map();
     estado.progreso = progresoVacio();
     estado.resumen = null; estado.motivoFin = '';
     estado.tiempos = { inicio: 0, inicioDetalle: 0, fin: 0 };
@@ -2966,6 +3425,7 @@
     ['tipBusqueda', 'Tipo de búsqueda (2 = masiva)', 'text'], ['maxDiasBloque', 'Días máximos por consulta', 'number'],
     ['numSerie', 'Serie', 'text'], ['numCpe', 'Número', 'text'],
     ['codEstado', 'Código estado', 'text'], ['codSubEstado', 'Código subestado', 'text'],
+    ['topeMin', 'Tope de tiempo (minutos; 0 = sin tope)', 'number'], ['deptoLlegada', 'Guardar solo las que llegan a (ej.: San Martín)', 'text'],
     ['pausaMinMs', 'Pausa mínima (ms)', 'number'], ['pausaMaxMs', 'Pausa máxima (ms)', 'number'],
     ['maxReintentos', 'Reintentos', 'number'], ['timeoutMs', 'Tiempo máx. por solicitud (ms)', 'number']
   ];
@@ -3099,6 +3559,7 @@
     // Más opciones
     const inputs = {};
     const valores = { ...D, ...(estado.config || {}) };
+    if (estado.config && estado.config.deptos) valores.deptoLlegada = estado.config.deptos.map(nombreDepto).join(', ');
     const campos = CAMPOS_AVANZADOS.map(([nombre, etiqueta, tipo]) => {
       inputs[nombre] = h('input', { type: tipo, value: texto(valores[nombre]), autocomplete: 'off', spellcheck: 'false' });
       return h('label', {}, etiqueta, inputs[nombre]);
@@ -3106,6 +3567,8 @@
     inputs.token = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Solo si no usa «Conectar»' });
     const chkJSON = h('input', { type: 'checkbox', checked: valores.descargarJSON !== false });
     const chkExcel = h('input', { type: 'checkbox', checked: valores.descargarExcel !== false });
+    const chkSoloLista = h('input', { type: 'checkbox', checked: valores.soloLista === true });
+    const chkRellenar = h('input', { type: 'checkbox', checked: valores.rellenar !== false });
     const fileInput = h('input', { type: 'file', accept: '.json,application/json', style: 'display:none' });
     fileInput.addEventListener('change', async () => {
       const f = fileInput.files && fileInput.files[0];
@@ -3127,6 +3590,9 @@
       h('summary', { text: 'Más opciones' }),
       h('label', { class: 'chk' }, chkJSON, 'Al terminar, descargar el JSON (para el tablero)'),
       h('label', { class: 'chk' }, chkExcel, 'Al terminar, descargar el Excel (para revisar)'),
+      h('label', { class: 'chk' }, chkRellenar, 'Bloques de 4 horas con más de 100 guías: pedirlas una por una por su número'),
+      h('label', { class: 'chk' }, chkSoloLista, 'Solo lista: contar las guías sin abrirlas (diagnóstico rápido)'),
+      h('div', { class: 'nota', text: 'Si la lista del tablero trae sus propias opciones (destino, tope, solo lista), mandan las de la lista.' }),
       h('div', { class: 'g' }, ...campos, h('label', { class: 'full' }, 'Token manual (opcional; solo memoria)', inputs.token)),
       h('h4', { text: 'Continuar con un resultado anterior' }),
       h('div', { class: 'row' }, btn.cargar, btn.limpiar, fileInput),
@@ -3186,7 +3652,7 @@
     usarModo(modo);
 
     function alIniciar() {
-      const op = { descargarJSON: chkJSON.checked, descargarExcel: chkExcel.checked };
+      const op = { descargarJSON: chkJSON.checked, descargarExcel: chkExcel.checked, soloLista: chkSoloLista.checked, rellenar: chkRellenar.checked };
       for (const [nombre] of CAMPOS_AVANZADOS) op[nombre] = inputs[nombre].value;
       if (modo === 'lista') {
         if (!estado.pedido) {
@@ -3293,10 +3759,21 @@
           eta = duracion(porGuia * Math.max(0, P.pendientesReales - P.consultadas));
         }
         textoLinea = `Descargando detalle: ${Math.min(P.procesadas + 1, P.total)} de ${P.total}${eta ? ` · faltan ${eta}` : ''}`;
+      } else if (E.fase === 'relleno') {
+        pct = P.rellenoTotal ? Math.min(100, (P.rellenoHechos / P.rellenoTotal) * 100) : 0;
+        textoLinea = `Bloques con más de 100 guías, por número: ${P.rellenoHechos}${P.rellenoTotal ? ` de unas ${P.rellenoTotal}` : ''} · ${P.actual}`;
       } else textoLinea = 'Preparando…';
+      const cfgT = E.config;
+      if (cfgT && cfgT.topeMin && !E.esperandoConexion && !E.pausado) {
+        const resta = E.tiempos.inicio + cfgT.topeMin * 60000 - Date.now();
+        textoLinea += ` · tope en ${duracion(Math.max(0, resta))}`;
+      }
     } else if (E.motivoFin && E.motivoFin !== 'EN_CURSO') {
-      pct = E.motivoFin === 'COMPLETADO' ? 100 : (P.total ? (P.procesadas / P.total) * 100 : 0);
-      textoLinea = textoMotivo(E.motivoFin) + (E.resumen ? `: ${E.resumen['Guías con detalle']} guía(s) con detalle y ${E.resumen['Total de bienes']} bien(es).` : '.');
+      pct = E.motivoFin === 'COMPLETADO' || E.motivoFin === 'SOLO_LISTA' ? 100 : (P.total ? (P.procesadas / P.total) * 100 : 0);
+      textoLinea = textoMotivo(E.motivoFin) + (!E.resumen ? '.' : E.motivoFin === 'SOLO_LISTA'
+        ? `: ${E.resumen['Guías encontradas (sin repetir)']} guía(s) en el listado.`
+        : `: ${E.resumen['Guías con detalle']} guía(s) con detalle y ${E.resumen['Total de bienes']} bien(es)` +
+          (E.resumen['Guías que llegan a otro departamento (no se guardan)'] ? `; ${E.resumen['Guías que llegan a otro departamento (no se guardan)']} llegan a otro departamento.` : '.'));
     } else textoLinea = 'Pegue la lista del tablero (o use la búsqueda manual) y pulse «Buscar y descargar».';
     ui.barra.style.width = pct.toFixed(1) + '%';
     ui.linea.textContent = textoLinea;
@@ -3322,6 +3799,7 @@
     clearInterval(refresco);
     cerrarPanel();
     estado.resultados.clear(); estado.previos.clear(); estado.memoria.clear(); estado.origenes.clear();
+    estado.encontradas.clear(); estado.fueraVistas.clear(); estado.relleno = [];
     estado.errores = []; estado.control = []; estado.controlDetalle = []; estado.busquedas = []; estado.tareas = [];
     try { delete window.GREExtractor; } catch (_) { window.GREExtractor = undefined; }
     console.log('[GRE] Extractor eliminado de la página.');
