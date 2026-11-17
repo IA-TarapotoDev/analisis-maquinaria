@@ -1,6 +1,6 @@
 /* =====================================================================
  * EXTRACTOR DE GRE – Guías de Remisión Electrónica (SUNAT, uso autorizado)
- * Versión 3.2.1
+ * Versión 3.3.0
  *
  * Dónde ejecutarlo:
  *   Microsoft Edge > DevTools (F12) > Console > selector de contexto
@@ -42,7 +42,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '3.2.1';
+  const VERSION = '3.3.0';
   const API_LISTADO = 'https://api-intranet.sunat.peru/v1/contribuyente/gre/comprobantes';
   const PANEL_ID = 'gre-extractor-host';
   const ORIGEN_CORRECTO = 'https://intranet.sunat.peru';
@@ -424,7 +424,10 @@
     return [...r];
   }
 
-  /** Departamentos de llegada: «22», «San Martín» o varios separados por comas → códigos de 2 dígitos. */
+  /**
+   * Destino por ubigeo: departamentos («22» o «San Martín»), provincias («1602») o distritos («220901»),
+   * varios separados por comas → prefijos de ubigeo de 2, 4 o 6 dígitos.
+   */
   function deptosDe(valor) {
     const lista = Array.isArray(valor) ? valor : String(valor ?? '').split(/[,;|]+/);
     const sinTilde = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
@@ -432,10 +435,10 @@
     for (const x of lista) {
       const t = sinTilde(String(x));
       if (!t) continue;
-      const cod = /^\d{1,2}$/.test(t) ? t.padStart(2, '0') : Object.keys(DEPARTAMENTOS).find((k) => DEPARTAMENTOS[k] === t);
-      if (cod && DEPARTAMENTOS[cod]) { if (!codigos.includes(cod)) codigos.push(cod); } else malos.push(String(x).trim());
+      const cod = /^\d{1,2}$/.test(t) ? t.padStart(2, '0') : /^(\d{4}|\d{6})$/.test(t) ? t : Object.keys(DEPARTAMENTOS).find((k) => DEPARTAMENTOS[k] === t);
+      if (cod && DEPARTAMENTOS[cod.slice(0, 2)]) { if (!codigos.includes(cod)) codigos.push(cod); } else malos.push(String(x).trim());
     }
-    if (malos.length) throw new ErrorValidacion(`Departamento de llegada no reconocido: ${malos.join(', ')}. Use el nombre (San Martín) o el código (22).`);
+    if (malos.length) throw new ErrorValidacion(`Destino no reconocido: ${malos.join(', ')}. Use el nombre del departamento (San Martín) o el ubigeo (22, 1602 o 220901).`);
     return codigos;
   }
 
@@ -605,6 +608,7 @@
       if (o.rellenar !== undefined) opciones.rellenar = o.rellenar !== false;
       if (!esVacio(o.topeMin)) opciones.topeMin = decimal(o.topeMin, 'Tope de tiempo de la lista (minutos)', 0, 600, 0);
       if (o.deptoLlegada !== undefined) opciones.deptoLlegada = deptosDe(o.deptoLlegada);
+      if (!esVacio(o.destinoNombre)) opciones.destinoNombre = limpio(o.destinoNombre).slice(0, 80);
     }
     const prioridad = new Set();
     for (const d of Array.isArray(p.prioridad) ? p.prioridad : []) for (const x of docsDe(d)) prioridad.add(x);
@@ -637,7 +641,7 @@
     if (p.ignoradas) t += ` Se ignoran ${p.ignoradas} búsqueda(s) con datos no válidos.`;
     const o = p.opciones || {}, extras = [];
     if (o.soloLista) extras.push('solo lista (sin abrir las guías)');
-    if (o.deptoLlegada && o.deptoLlegada.length) extras.push(`solo las que llegan a ${o.deptoLlegada.map(nombreDepto).join(', ')}`);
+    if (o.deptoLlegada && o.deptoLlegada.length) extras.push(`solo las que llegan a ${o.destinoNombre || o.deptoLlegada.map(nombreDepto).join(', ')}`);
     if (o.topeMin) extras.push(`tope de ${o.topeMin} minutos`);
     if (o.rellenar === false) extras.push('sin relleno por número');
     if (p.prioridad && p.prioridad.size) extras.push('con lista de prioridad');
@@ -646,7 +650,7 @@
   }
 
   const TILDES_DEPTO = { '02': 'Áncash', '03': 'Apurímac', '10': 'Huánuco', '12': 'Junín', '22': 'San Martín' };
-  const nombreDepto = (cod) => TILDES_DEPTO[cod] || (DEPARTAMENTOS[cod] || cod).toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+  const nombreDepto = (cod) => (cod.length > 2 ? `ubigeo ${cod}` : TILDES_DEPTO[cod] || (DEPARTAMENTOS[cod] || cod).toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()));
 
   function normalizarConfig(op = {}) {
     if (!esObjetoPlano(op)) throw new ErrorValidacion('Las opciones deben ser un objeto.');
@@ -660,6 +664,7 @@
       rellenar: siNo(elegir('rellenar'), D.rellenar),
       topeMin: decimal(elegir('topeMin'), 'Tope de tiempo (minutos)', 0, 600, D.topeMin),
       deptos: deptosDe(elegir('deptoLlegada') ?? D.deptoLlegada),
+      destinoNombre: (pedido && pedido.opciones.destinoNombre) || '',
       prioridad: pedido ? pedido.prioridad : new Set(),
       anclas: pedido ? pedido.anclas : [],
       numSerie: limpio(op.numSerie ?? op.serie).toUpperCase(),
@@ -1470,7 +1475,7 @@
   function llegaAlDestino(cfg, det) {
     if (!cfg.deptos || !cfg.deptos.length) return true;
     const u = llegadaDe(det);
-    return !u || cfg.deptos.includes(u.slice(0, 2));
+    return !u || cfg.deptos.some((p) => u.startsWith(p));
   }
 
   /** Guía abierta que no llega al destino: no se guarda su detalle, solo la clave y el ubigeo de llegada. */
@@ -1965,7 +1970,7 @@
         ctx.limite = estado.tiempos.inicio + cfg.topeMin * 60000;
         log(`Tope de tiempo: ${cfg.topeMin} minuto(s); a las ${horaDe(ctx.limite)} se detiene, guarda y descarga lo obtenido.`);
       }
-      if (cfg.deptos.length) log(`Se guardan solo las guías que llegan a ${cfg.deptos.map(nombreDepto).join(', ')}; las demás solo se cuentan.`);
+      if (cfg.deptos.length) log(`Se guardan solo las guías que llegan a ${cfg.destinoNombre || cfg.deptos.map(nombreDepto).join(', ')}; las demás solo se cuentan.`);
 
       // Fase 1: buscar las guías
       estado.fase = 'busqueda';

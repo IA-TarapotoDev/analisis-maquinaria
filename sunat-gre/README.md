@@ -2,7 +2,7 @@
 
 Script para la consola de Microsoft Edge que descarga, dentro de su propia sesión de SUNAT, las guías de remisión (remitente, transportista y por eventos) y su detalle: bienes, peso, fechas, punto de partida (agencia), llegada, transportista, vehículo y conductor. Funciona junto con el [tablero de riesgo](../riesgo/README.md): el tablero arma la lista de búsquedas y el extractor la ejecuta.
 
-- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.2.1).
+- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.3.0).
 - Usa solo la consulta autorizada de la pantalla de guías de SUNAT, con la sesión de quien lo ejecuta. No evade controles ni guarda la conexión.
 
 ## Dónde se ejecuta
@@ -64,9 +64,9 @@ Límites:
 | Pedir por número los bloques de más de 100 | Activada por omisión (punto 4 de arriba). |
 | Solo lista | Cuenta las guías sin abrirlas (diagnóstico rápido). Los bloques de más de 100 se estiman por la numeración, sin pedirlos. |
 | Tope de tiempo (minutos) | Al llegar, se detiene, guarda y descarga lo obtenido; lo que faltó queda anotado en el resumen. 0 = sin tope. |
-| Guardar solo las que llegan a… | Departamento de llegada (nombre o código: «San Martín» o «22»; varios, separados por comas). Las guías se abren igual (el listado no trae el destino), pero las que llegan a otro departamento no se guardan: solo se cuentan y quedan anotadas para no volver a abrirlas. |
+| Guardar solo las que llegan a… | Destino por ubigeo: departamento (nombre o código: «San Martín» o «22»), provincia («1602») o distrito («220901»); varios, separados por comas. Las guías se abren igual (el listado no trae el destino), pero las que llegan a otro departamento no se guardan: solo se cuentan y quedan anotadas para no volver a abrirlas. |
 
-Si la lista trae sus propias opciones (`opciones: { soloLista, rellenar, topeMin, deptoLlegada }`), mandan las de la lista. La lista también puede traer `prioridad` (documentos: las guías cuyo destinatario figura en el listado con uno de ellos se abren primero; la lista solo se usa en memoria y no se exporta) y `anclas` (`{ rucEmisor, codCpe, serie, numero, fecha }`).
+Si la lista trae sus propias opciones (`opciones: { soloLista, rellenar, topeMin, deptoLlegada, destinoNombre }`), mandan las de la lista. La lista también puede traer `prioridad` (documentos: las guías cuyo destinatario figura en el listado con uno de ellos se abren primero; la lista solo se usa en memoria y no se exporta) y `anclas` (`{ rucEmisor, codCpe, serie, numero, fecha }`).
 
 Si se detiene a mitad de la búsqueda, conserva las guías ya encontradas (sin abrir) y se pueden descargar con ⬇ JSON o ⬇ Excel.
 
