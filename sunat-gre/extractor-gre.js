@@ -1,6 +1,6 @@
 /* =====================================================================
  * EXTRACTOR DE GRE – Guías de Remisión Electrónica (SUNAT, uso autorizado)
- * Versión 3.2.0
+ * Versión 3.2.1
  *
  * Dónde ejecutarlo:
  *   Microsoft Edge > DevTools (F12) > Console > selector de contexto
@@ -42,7 +42,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '3.2.0';
+  const VERSION = '3.2.1';
   const API_LISTADO = 'https://api-intranet.sunat.peru/v1/contribuyente/gre/comprobantes';
   const PANEL_ID = 'gre-extractor-host';
   const ORIGEN_CORRECTO = 'https://intranet.sunat.peru';
@@ -2138,7 +2138,7 @@
       'Días o tramos que SUNAT no permitió consultar': estado.tareas.reduce((s, t) => s + t.diasRechazados.length + t.tramosExcedidos.length, 0),
       'Guías con detalle': ok.length,
       '  de ellas reutilizadas': regs.filter((r) => r.ok && r.origen !== 'actual').length,
-      'Guías con error': regs.filter((r) => r.procesada && !r.ok && r.origen !== 'conocida' && !r.noExiste && !r.noConsultada).length,
+      'Guías con error': regs.filter((r) => r.procesada && !r.ok && r.origen !== 'conocida' && !r.noExiste && !r.noConsultada && !r.fueraDestino).length,
       'Guías que no existen (consulta por número)': regs.filter((r) => r.noExiste).length,
       'Números no consultados (fin de la serie)': regs.filter((r) => r.noConsultada).length,
       'Guías no procesadas': regs.filter((r) => !r.procesada && !r.soloListado).length,
@@ -2165,7 +2165,7 @@
         const c = conteo.get(o.etiqueta);
         if (r.ok) c.ok++;
         else if (r.origen === 'conocida') c.tablero++;
-        else if (r.procesada && !r.noExiste && !r.noConsultada) c.error++;
+        else if (r.procesada && !r.noExiste && !r.noConsultada && !r.fueraDestino) c.error++;
       }
     }
     return estado.tareas.map((t) => {

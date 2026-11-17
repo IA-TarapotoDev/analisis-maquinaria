@@ -2,7 +2,7 @@
 
 Script para la consola de Microsoft Edge que descarga, dentro de su propia sesión de SUNAT, las guías de remisión (remitente, transportista y por eventos) y su detalle: bienes, peso, fechas, punto de partida (agencia), llegada, transportista, vehículo y conductor. Funciona junto con el [tablero de riesgo](../riesgo/README.md): el tablero arma la lista de búsquedas y el extractor la ejecuta.
 
-- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.2.0).
+- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.2.1).
 - Usa solo la consulta autorizada de la pantalla de guías de SUNAT, con la sesión de quien lo ejecuta. No evade controles ni guarda la conexión.
 
 ## Dónde se ejecuta
