@@ -2605,7 +2605,8 @@
     const cfg = estado.config;
     const guias = [...estado.resultados.values()].map((r) => (r.fueraDestino ? {
       // Abierta y llega a otro departamento: solo la clave (para no volver a abrirla) y el ubigeo de llegada
-      clave: r.clave, estado: 'fuera_de_destino', llegada: r.llegada || '', busquedas: estado.origenes.get(r.clave) || [], origen: r.origen
+      clave: r.clave, estado: 'fuera_de_destino', llegada: r.llegada || '', fecha: r.momento || momentoDe(null, r.listado),
+      busquedas: estado.origenes.get(r.clave) || [], origen: r.origen
     } : {
       clave: r.clave,
       estado: r.ok ? 'con_detalle' : r.origen === 'conocida' ? 'ya_en_tablero' : r.noExiste ? 'no_existe' : r.noConsultada ? 'no_consultada'

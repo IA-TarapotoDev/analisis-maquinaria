@@ -74,7 +74,7 @@ Si se detiene a mitad de la búsqueda, conserva las guías ya encontradas (sin a
 
 | Archivo | Para qué | Contenido |
 |---|---|---|
-| JSON | Tablero | Una entrada por guía: `clave`, `estado` (`con_detalle`, `ya_en_tablero`, `no_existe`, `no_consultada`, `sin_detalle`, `no_procesada`, `solo_listado` y `fuera_de_destino`, que trae solo la clave y el ubigeo de llegada), `citadaEnFactura`, fila del listado (estado actual en SUNAT), `detalle` completo y las búsquedas (y casos) que la encontraron. También las consultas hechas, lo pedido por número (`relleno`), los errores y el control de calidad. Nunca incluye la conexión ni la lista de prioridad. |
+| JSON | Tablero | Una entrada por guía: `clave`, `estado` (`con_detalle`, `ya_en_tablero`, `no_existe`, `no_consultada`, `sin_detalle`, `no_procesada`, `solo_listado` y `fuera_de_destino`, que trae solo la clave, la fecha y hora de emisión y el ubigeo de llegada), `citadaEnFactura`, fila del listado (estado actual en SUNAT), `detalle` completo y las búsquedas (y casos) que la encontraron. También las consultas hechas, lo pedido por número (`relleno`), los errores y el control de calidad. Nunca incluye la conexión ni la lista de prioridad. |
 | Excel | Revisión | Resumen (con una fila por búsqueda), Guías (una fila por guía, con todos los campos del detalle), Bienes (una fila por bien), listas anidadas en hojas aparte, Búsquedas, Errores y Control. Los textos conservan los ceros a la izquierda. |
 | CSV | Opcional | Los mismos datos en CSV (UTF-8 con BOM, separador «;»): **Más opciones > ⬇ CSV**. |
 
