@@ -605,6 +605,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   .lado-tit { margin: 6px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--mudo); }
   .mapa-lado .filtros select { flex: 1 1 140px; min-width: 0; }
   .mapa-lado .tabs-chicas { align-self: flex-start; }
+  .aviso-paquete { border-color: var(--ambar); background: var(--ambar-suave); }
+  .aviso-paquete h3 { color: var(--ambar); }
 
 </style>
 </head>
@@ -7586,9 +7588,22 @@ var qrcode = function() {
     return abierta ? [tr, el('tr', { class: 'ficha' }, el('td', { colspan: String(ncol) }, ficha()))] : [tr];
   }
 
+  /** Un paquete inicial que empezó a guardarse y no terminó (por ejemplo, si la base falló a mitad): hay que volver a cargarlo. */
+  function avisoPaqueteM() {
+    const ok = new Set(M.eventos.filter((e) => e.t === 'paquete_ok').map((e) => e.paquete));
+    const medias = [...new Set(M.fuentes.map((f) => f.resumen.paquete).filter(Boolean))].some((p) => !ok.has(p));
+    if (!medias) return null;
+    return el('div', { class: 'tarjeta aviso-paquete', role: 'alert' }, el('h3', { text: 'El paquete inicial no terminó de cargarse' }),
+      el('p', { text: 'Pueden faltar datos del equipo, como las verificaciones (beneficio y traslado) y los números de expediente. Sin ellos, los casos armados se ven como «por completar» y los expedientes pueden tener otro número.' }),
+      el('p', {}, el('b', { text: 'Vuelva a arrastrar el archivo del paquete inicial a la página: ' }), 'solo agrega lo que falta, sin duplicar nada (si ya estaba todo, solo lo confirma y este aviso desaparece).'),
+      el('div', { class: 'fila-botones' }, el('button', { type: 'button', class: 'btn', onclick: () => elegirArchivosM() }, 'Cargar el paquete inicial')));
+  }
+
   /* ----- Panel ----- */
   function vistaPanelM() {
     const caja = el('div', { class: 'secciones' });
+    const avisoP = avisoPaqueteM();
+    if (avisoP) caja.append(avisoP);
     const vivas = M.salidas.filter((s) => s.estado !== 'Descartada' && s.estado !== 'Regresó a la ZTE');
     const n = (e) => M.salidas.filter((s) => s.estado === e).length;
     const activos = [...M.seguidos.values()].filter((p) => p.activo).length;
@@ -7628,7 +7643,7 @@ var qrcode = function() {
         el('td', {}, `${lugarM(s.g0.partida)} → ${lugarM(s.g0.llegada)}`, el('div', { class: 'chico', text: `${fechaM(s.f)} · ${titulo(s.mov.nombre || s.mov.doc)}` })),
         el('td', { class: 'chico', text: s.falta.length ? s.falta.join('; ') : 'Nada: ubicar y verificar' }),
         el('td', {}, el('button', { type: 'button', class: 'btn sec btn-chico', onclick: (e) => { e.stopPropagation(); abrir(s); } }, 'Abrir')))), 'No hay salidas por trabajar con los datos cargados.'),
-      vivas.length > top.length ? el('div', { class: 'fila-botones' }, el('button', { type: 'button', class: 'btn sec btn-chico', onclick: () => irM('salidas') }, `Ver las ${vivas.length}`)) : null);
+      ...(vivas.length > top.length ? [el('div', { class: 'fila-botones' }, el('button', { type: 'button', class: 'btn sec btn-chico', onclick: () => irM('salidas') }, `Ver las ${vivas.length}`))] : []));
     if (M.sinSerie.length) {
       caja.append(el('div', { class: 'tarjeta' }, el('h3', { text: `Máquinas sin serie que salieron a la ZTC (${M.sinSerie.length})` }),
         el('p', { class: 'chico', text: 'No forman caso: son un dato relevante. Si encuentra la serie (en la factura o en otra guía), anótela en «Guías» y la salida se arma sola.' }),
@@ -7642,6 +7657,8 @@ var qrcode = function() {
   function vistaSalidasM() {
     const tipos = [...new Set(M.salidas.map((s) => s.tipo))].sort();
     const caja = el('div', { class: 'secciones' });
+    const avisoP = avisoPaqueteM();
+    if (avisoP) caja.append(avisoP);
     caja.append(barraFiltrosM({ placeholder: 'Buscar S, serie, RUC, nombre, guía o lugar', selects: [
       ['estado', 'Todos los estados', Object.keys(ORDEN_ESTADOS).map((e) => [e, `${e} (${M.salidas.filter((s) => s.estado === e).length})`])],
       ['tipo', 'Todas las máquinas', tipos.map((t) => [t, t])]] }));
@@ -8062,6 +8079,10 @@ var qrcode = function() {
   async function cargarPaquete(d, avance) {
     if (!d || d.formato !== 'RIESGO_PAQUETE_INICIAL' || !d.id) throw new Error('no es un paquete inicial');
     if (!M.cargado) await cargarM(avance || (() => {}));
+    try { return await guardarPaquete(d, avance); }
+    finally { recalcularM(); }        // aunque falle a mitad, la pantalla muestra lo que sí se guardó (y el aviso de paquete incompleto)
+  }
+  async function guardarPaquete(d, avance) {
     const partes = [];
     // Envíos: empresas (solo las que faltan o cambiaron)
     const emp = ((d.envios || {}).empresas || []).filter((e) => rucValido(e.ruc));
@@ -8097,6 +8118,8 @@ var qrcode = function() {
     const todos = (maq.eventos || []).filter((e) => e && ['seguido', 'seguido_baja', 'maquina', 'numero', 'observa', 'serie_guia'].includes(e.t)).map(normal);
     const evs = todos.filter((e) => !yaE.has(firma(e)));
     await registrarTandas(evs, avance);
+    // Marca de que el paquete quedó completo (si falta, el Panel avisa que hay que volver a cargarlo)
+    if (!M.eventos.some((e) => e.t === 'paquete_ok' && e.paquete === d.id)) await registrarM({ t: 'paquete_ok', paquete: d.id, archivos: fuentes.length, datos: todos.length });
     const antes = (fuentes.length - faltan.length) + (todos.length - evs.length);
     partes.push(!faltan.length && !evs.length ? 'maquinaria ya estaba cargada'
       : `maquinaria: ${plural(faltan.length, 'archivo', 'archivos')} y ${plural(evs.length, 'dato del equipo', 'datos del equipo')}${antes ? ' (se completó lo que faltaba de una carga anterior)' : ''}`);
