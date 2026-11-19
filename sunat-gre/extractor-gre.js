@@ -42,7 +42,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '3.3.0';
+  const VERSION = '3.4.0';
   const API_LISTADO = 'https://api-intranet.sunat.peru/v1/contribuyente/gre/comprobantes';
   const PANEL_ID = 'gre-extractor-host';
   const ORIGEN_CORRECTO = 'https://intranet.sunat.peru';
@@ -351,6 +351,28 @@
     return limpio(valor);
   }
 
+  /**
+   * Fecha con hora opcional de la lista del tablero: «2026-11-18T08:00», «ayer 08:00» o solo la fecha («ayer», «2026-11-18»).
+   * Devuelve { dia: 'AAAA-MM-DD', hora: 8 } (hora null si no la trae).
+   */
+  function fechaYHora(valor) {
+    const t = limpio(valor);
+    const m = /^(.*?)[T\s]+(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(t);
+    const hora = m ? Number(m[2]) + Number(m[3]) / 60 : null;
+    return { dia: resolverFecha(m ? m[1] : t), hora: hora !== null && hora >= 0 && hora < 24 ? hora : null };
+  }
+  const hhmm = (h) => `${dos(Math.floor(h))}:${dos(Math.round((h % 1) * 60))}`;
+  /**
+   * Bloques de 4 horas de un día que entran en una búsqueda con horas (null = el día entero). La hora de inicio
+   * y la de fin (que no se incluye) se redondean hacia afuera al bloque: de 08:00 a 08:00 calza justo.
+   */
+  function bloquesDelDia(tarea, dia) {
+    let ini = 1, fin = 6;
+    if (dia === tarea.desde && tarea.horaDesde) ini = Math.floor(tarea.horaDesde / 4) + 1;
+    if (dia === tarea.hasta && tarea.horaHasta !== null && tarea.horaHasta !== undefined) fin = Math.min(6, Math.ceil(tarea.horaHasta / 4));
+    return ini === 1 && fin === 6 ? null : BLOQUES_HORA.filter((b) => b >= ini && b <= fin);
+  }
+
   /** Tipos de guía en el orden de SUNAT (09, 31, G9); sin tipos válidos, los tres. */
   function normalizarTipos(v) {
     const lista = Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/);
@@ -592,11 +614,15 @@
       }
       const rucE = limpio(b.rucEmisor), rucR = limpio(b.rucReceptor);
       if ((!rucE && !rucR) || (rucE && !rucValido(rucE)) || (rucR && !rucValido(rucR))) { ignoradas++; return; }
-      const desde = resolverFecha(b.desde);
-      let hasta = resolverFecha(b.hasta || b.desde);
+      // Fechas con hora opcional: «de 2026-11-18T08:00 a 2026-11-19T08:00» (la hora final no se incluye)
+      const D = fechaYHora(b.desde), H = fechaYHora(b.hasta || b.desde);
+      const desde = D.dia;
+      let hasta = H.dia, horaHasta = H.hora;
+      if (horaHasta === 0 && parsearFecha(hasta)) { hasta = sumarDias(hasta, -1); horaHasta = null; }   // hasta las 00:00 = todo el día anterior
       if (!parsearFecha(desde) || !parsearFecha(hasta) || desde > hasta || desde > hoy) { ignoradas++; return; }
-      if (hasta > hoy) hasta = hoy;
-      busquedas.push({ tipo: 'listado', etiqueta, caso, grupo, rucEmisor: rucE, rucReceptor: rucR, tipos: normalizarTipos(b.tipos), desde, hasta });
+      if (hasta > hoy) { hasta = hoy; horaHasta = null; }
+      if (desde === hasta && D.hora !== null && horaHasta !== null && horaHasta <= D.hora) { ignoradas++; return; }
+      busquedas.push({ tipo: 'listado', etiqueta, caso, grupo, rucEmisor: rucE, rucReceptor: rucR, tipos: normalizarTipos(b.tipos), desde, hasta, horaDesde: D.hora, horaHasta });
     });
     if (!busquedas.length) throw new ErrorValidacion('La lista no tiene búsquedas válidas.');
     const conocidas = Array.isArray(p.conocidas) ? p.conocidas.filter((x) => typeof x === 'string' && x) : [];
@@ -621,9 +647,10 @@
         anclas.push({ rucEmisor: ruc, codCpe: cod, serie, num, t });
       }
     }
+    const ventana = esObjetoPlano(p.ventana) && limpio(p.ventana.desde) && limpio(p.ventana.hasta) ? { desde: limpio(p.ventana.desde), hasta: limpio(p.ventana.hasta) } : null;
     return {
       id: limpio(p.id) || 'lista', titulo: limpio(p.titulo) || 'Lista del tablero', generado: limpio(p.generado),
-      busquedas, conocidas, ignoradas, opciones, prioridad, anclas
+      busquedas, conocidas, ignoradas, opciones, prioridad, anclas, ventana
     };
   }
 
@@ -632,9 +659,13 @@
     const listados = p.busquedas.filter((b) => b.tipo === 'listado');
     const directas = p.busquedas.filter((b) => b.tipo === 'directa');
     const rucs = new Set(listados.flatMap((b) => [b.rucEmisor, b.rucReceptor].filter(Boolean)));
-    const desde = listados.map((b) => b.desde).sort()[0], hasta = listados.map((b) => b.hasta).sort().slice(-1)[0];
+    const ini = (b) => `${b.desde}T${b.horaDesde !== null && b.horaDesde !== undefined ? hhmm(b.horaDesde) : '00:00'}`;
+    const fin = (b) => `${b.hasta}T${b.horaHasta !== null && b.horaHasta !== undefined ? hhmm(b.horaHasta) : '24:00'}`;
+    const primero = listados.slice().sort((a, b) => ini(a).localeCompare(ini(b)))[0], ultimo = listados.slice().sort((a, b) => fin(a).localeCompare(fin(b))).slice(-1)[0];
+    const conHora = primero && (ini(primero).slice(11) !== '00:00' || fin(ultimo).slice(11) !== '24:00');
     let t = `«${p.titulo}»: ${listados.length} búsqueda(s) de ${rucs.size} RUC`;
-    if (desde) t += desde === hasta ? `, del ${dmy(desde)}` : `, del ${dmy(desde)} al ${dmy(hasta)}`;
+    if (primero && conHora) t += `, del ${dmy(primero.desde)} ${ini(primero).slice(11)} al ${dmy(ultimo.hasta)} ${fin(ultimo).slice(11)} (nada más)`;
+    else if (primero) t += primero.desde === ultimo.hasta ? `, del ${dmy(primero.desde)}` : `, del ${dmy(primero.desde)} al ${dmy(ultimo.hasta)}`;
     if (directas.length) t += `; ${directas.length} guía(s) por consultar directo por su número`;
     t += '.';
     if (p.conocidas.length) t += ` ${p.conocidas.length} guía(s) ya están en el tablero: no se volverán a descargar.`;
@@ -704,7 +735,7 @@
       cfg.origen = 'tablero';
       cfg.busquedas = p.busquedas;
       cfg.conocidas = p.conocidas;
-      cfg.pedidoInfo = { id: p.id, titulo: p.titulo, generado: p.generado, busquedas: p.busquedas.length, conocidas: p.conocidas.length };
+      cfg.pedidoInfo = { id: p.id, titulo: p.titulo, generado: p.generado, busquedas: p.busquedas.length, conocidas: p.conocidas.length, ...(p.ventana ? { ventana: p.ventana } : {}) };
     } else {
       // Búsqueda manual: RUC (lista o forma anterior), rol, tipos y periodos
       let rol = limpio(op.rol).toLowerCase();
@@ -1255,9 +1286,18 @@
     let cursor = tarea.desde;
     let ultimoRechazo = '';
     let ultimoRechazoDias = 0;
+    // Con horas (por ejemplo, de ayer 08:00 a hoy 08:00), el último día solo entra en sus bloques: los tramos de varios días paran antes
+    const ultimoCompleto = bloquesDelDia(tarea, tarea.hasta) ? sumarDias(tarea.hasta, -1) : tarea.hasta;
     while (cursor <= tarea.hasta) {
       if (ctx.signal.aborted) throw crearAbortError();
-      const restantes = diasEntre(cursor, tarea.hasta);
+      const parcial = bloquesDelDia(tarea, cursor);
+      if (parcial) {
+        if (parcial.length) await buscarPorHoras(ctx, tarea, cursor, encontradas, parcial, tarea.tipos);
+        P.diasHechos += 1;
+        cursor = sumarDias(cursor, 1);
+        continue;
+      }
+      const restantes = diasEntre(cursor, ultimoCompleto);
       const dias = Math.max(1, Math.min(ap.tam, ap.tamMax, restantes));
       const c = consultaDe(tarea, cursor, sumarDias(cursor, dias - 1));
       P.busquedaActual = etiquetaConsulta(c);

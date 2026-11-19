@@ -2,7 +2,7 @@
 
 Script para la consola de Microsoft Edge que descarga, dentro de su propia sesión de SUNAT, las guías de remisión (remitente, transportista y por eventos) y su detalle: bienes, peso, fechas, punto de partida (agencia), llegada, transportista, vehículo y conductor. Funciona junto con el [tablero de riesgo](../riesgo/README.md): el tablero arma la lista de búsquedas y el extractor la ejecuta.
 
-- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.3.0).
+- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.4.0).
 - Usa solo la consulta autorizada de la pantalla de guías de SUNAT, con la sesión de quien lo ejecuta. No evade controles ni guarda la conexión.
 
 ## Dónde se ejecuta
@@ -24,7 +24,9 @@ Para no pegarlo cada día, guárdelo una sola vez como *Snippet*: **Sources > Sn
    - **JSON** (`GRE_<lista>_<fechas>_<hora>.json`): para integrarlo al tablero.
    - **Excel** (`GRE_<lista>_<fechas>_<hora>.xlsx`): para revisar (hojas Resumen, Guías, Bienes, Búsquedas, Errores y Control, y una hoja por cada lista de vehículos, conductores, documentos relacionados, etc.).
 
-Para no volver a descargar lo que ya trajo el día anterior, antes de pulsar «Buscar y descargar» cargue el JSON anterior en **Más opciones > Cargar resultado anterior**. Cuando el tablero integre los resultados, la lista del día llevará las guías ya conocidas y esto no hará falta.
+**Si la descarga se corta** (tope de tiempo o sesión de SUNAT vencida): cargue el JSON en la página que armó la lista, vuelva a copiar la lista del día y péguela en el extractor (después de volver a entrar a SUNAT). La lista nueva lleva todo lo ya descargado («ya en el tablero» y anclas): solo se pide lo que falta. «Más opciones > Cargar resultado anterior» solo sirve para listas que no llevan las guías conocidas.
+
+**Ventana fija** (desde la versión 3.4.0): la lista del día de la página de envíos busca **de ayer 08:00 a hoy 08:00, nada más**. Como la ventana no cambia durante el día, volver a correr la lista no trae guías nuevas: solo completa lo que faltó, y termina.
 
 ## Casos
 
@@ -66,7 +68,9 @@ Límites:
 | Tope de tiempo (minutos) | Al llegar, se detiene, guarda y descarga lo obtenido; lo que faltó queda anotado en el resumen. 0 = sin tope. |
 | Guardar solo las que llegan a… | Destino por ubigeo: departamento (nombre o código: «San Martín» o «22»), provincia («1602») o distrito («220901»); varios, separados por comas. Las guías se abren igual (el listado no trae el destino), pero las que llegan a otro departamento no se guardan: solo se cuentan y quedan anotadas para no volver a abrirlas. |
 
-Si la lista trae sus propias opciones (`opciones: { soloLista, rellenar, topeMin, deptoLlegada, destinoNombre }`), mandan las de la lista. La lista también puede traer `prioridad` (documentos: las guías cuyo destinatario figura en el listado con uno de ellos se abren primero; la lista solo se usa en memoria y no se exporta) y `anclas` (`{ rucEmisor, codCpe, serie, numero, fecha }`).
+Si la lista trae sus propias opciones (`opciones: { soloLista, rellenar, topeMin, deptoLlegada, destinoNombre }`), mandan las de la lista.
+
+Cada búsqueda de la lista tiene `desde` y `hasta`: una fecha (`AAAA-MM-DD`, `hoy`, `ayer`, `hoy-N`) o, desde la versión 3.4.0, una fecha con hora (`2026-11-18T08:00`, `ayer 08:00`). Con hora, la hora final no se incluye y el primer y el último día se consultan solo en sus bloques de 4 horas de SUNAT (00, 04, 08, 12, 16 y 20 h; otra hora se redondea hacia afuera): «de ayer 08:00 a hoy 08:00» es ayer de 08:00 a 23:59 y hoy de 00:00 a 07:59. La lista puede traer `ventana: { desde, hasta }`, que se copia al JSON para que la página sepa qué periodo cubrió la descarga. La lista también puede traer `prioridad` (documentos: las guías cuyo destinatario figura en el listado con uno de ellos se abren primero; la lista solo se usa en memoria y no se exporta) y `anclas` (`{ rucEmisor, codCpe, serie, numero, fecha }`).
 
 Si se detiene a mitad de la búsqueda, conserva las guías ya encontradas (sin abrir) y se pueden descargar con ⬇ JSON o ⬇ Excel.
 
