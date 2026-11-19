@@ -1,6 +1,6 @@
 # Extractor de GRE (guías de remisión electrónicas)
 
-Script para la consola de Microsoft Edge que descarga, dentro de su propia sesión de SUNAT, las guías de remisión (remitente, transportista y por eventos) y su detalle: bienes, peso, fechas, punto de partida (agencia), llegada, transportista, vehículo y conductor. Funciona junto con el [tablero de riesgo](../riesgo/README.md): el tablero arma la lista de búsquedas y el extractor la ejecuta.
+Script para la consola de Microsoft Edge que descarga, dentro de su propia sesión de SUNAT, las guías de remisión (remitente, transportista y por eventos) y su detalle: bienes, peso, fechas, punto de partida (agencia), llegada, transportista, vehículo y conductor. Funciona junto con el sitio **Gestión de Riesgo · IA Tarapoto** (https://ia-tarapotodev.github.io/analisis-maquinaria/): cada módulo (Envíos y Maquinaria) arma su lista del día y el extractor la ejecuta.
 
 - Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.4.0).
 - Usa solo la consulta autorizada de la pantalla de guías de SUNAT, con la sesión de quien lo ejecuta. No evade controles ni guarda la conexión.
@@ -16,12 +16,12 @@ Para no pegarlo cada día, guárdelo una sola vez como *Snippet*: **Sources > Sn
 
 ## Rutina diaria (unos minutos por la mañana)
 
-1. En el tablero, pestaña **Alertas**, pulse **«Lista del día»**: se copia la lista (ayer y hoy de los compradores reincidentes, del importador y de los transportistas vigilados).
+1. En el sitio, en el módulo que corresponda, pulse **«1 Copiar lista del día»**: en **Envíos**, las guías de las empresas de transporte; en **Maquinaria**, las de los tenedores (como remitente y como destinatario), transportistas e importadores seguidos. Cada resultado se carga en su propio módulo («2 Cargar resultado» o «2 Cargar archivos»).
 2. En SUNAT, ejecute el extractor (snippet) y pegue la lista en el cuadro de **«Lista del tablero»** del panel (Ctrl+V). El panel resume qué va a buscar.
 3. Pulse **«▶ Buscar y descargar»**.
 4. Si el panel pide conexión, abra **cualquier guía con «Ver»** en la pantalla de SUNAT (o pulse «Buscar»). La conexión se toma sola y la búsqueda continúa. Lo mismo ocurre si la conexión vence a mitad del proceso (dura aproximadamente una hora).
 5. Al terminar se descargan dos archivos:
-   - **JSON** (`GRE_<lista>_<fechas>_<hora>.json`): para integrarlo al tablero.
+   - **JSON** (`GRE_<lista>_<fechas>_<hora>.json`): para cargarlo en el módulo que armó la lista.
    - **Excel** (`GRE_<lista>_<fechas>_<hora>.xlsx`): para revisar (hojas Resumen, Guías, Bienes, Búsquedas, Errores y Control, y una hoja por cada lista de vehículos, conductores, documentos relacionados, etc.).
 
 **Si la descarga se corta** (tope de tiempo o sesión de SUNAT vencida): cargue el JSON en la página que armó la lista, vuelva a copiar la lista del día y péguela en el extractor (después de volver a entrar a SUNAT). La lista nueva lleva todo lo ya descargado («ya en el tablero» y anclas): solo se pide lo que falta. «Más opciones > Cargar resultado anterior» solo sirve para listas que no llevan las guías conocidas.
