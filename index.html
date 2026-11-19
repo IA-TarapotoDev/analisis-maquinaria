@@ -3775,11 +3775,13 @@ var qrcode = function() {
   function armarCategorias() {
     const por = new Map(CONFIG.categorias.map((c) => [c.id, { ...c, propia: false, palabras: '' }]));
     for (const ev of eventosVivos()) {
-      if (ev.t !== 'categoria' || !ev.id) continue;
-      const x = por.get(ev.id) || { id: ev.id, nombre: titulo(ev.id.replace(/_/g, ' ')), propia: true, palabras: '' };
+      if (ev.t !== 'categoria') continue;
+      const lid = ev.lista || (ev.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ev.id) ? ev.id : '');   // antes el código iba en «id»
+      if (!lid) continue;
+      const x = por.get(lid) || { id: lid, nombre: titulo(lid.replace(/_/g, ' ')), propia: true, palabras: '' };
       if (ev.nombre) x.nombre = ev.nombre;
       if (ev.palabras !== undefined) x.palabras = ev.palabras;
-      por.set(ev.id, x);
+      por.set(lid, x);
     }
     for (const x of app.lista.entradas.values()) {
       if (x.lista && !por.has(x.lista)) por.set(x.lista, { id: x.lista, nombre: titulo(x.lista.replace(/_/g, ' ')), propia: true, palabras: '', deArchivo: true });
@@ -3845,7 +3847,7 @@ var qrcode = function() {
   const listaDe = (t) => {
     const x = norm(t);
     const fija = /CIGARR|TABACO/.test(x) ? 'cigarrillos' : /ROPA|PRENDA|VESTIR|TEXTIL/.test(x) ? 'ropa' : /CALZADO|ZAPAT/.test(x) ? 'calzado'
-      : /LICOR|WHISK|VODKA|TRAGO/.test(x) ? 'licores' : /ACCESORIO|CELULAR/.test(x) ? 'accesorios'
+      : /LICOR|WHISK|VODKA|TRAGO/.test(x) ? 'licores' : /ACCESORIO|CELULAR|\bACC[_ ]?CEL|PROV[_ ]?EQUI|EQUI[_ ]?ACCE/.test(x) ? 'accesorios'   // también «Acc_Cel» y «Prov_Equi_acce»
         : /AGROQUIM|PLAGUICID|PESTICID|INSECTICID|HERBICID|FUNGICID/.test(x) ? 'agroquimicos' : '';
     if (fija) return fija;
     // Listas creadas en la página: por su nombre
@@ -4010,7 +4012,7 @@ var qrcode = function() {
 
   /** Guarda un evento en la bitácora (cifrado) y lo suma a la memoria. */
   async function registrar(...eventos) {
-    const evs = eventos.map((e) => ({ id: nuevoId(), en: new Date().toISOString(), ...e }));
+    const evs = eventos.map((e) => ({ en: new Date().toISOString(), ...e, id: nuevoId() }));   // el id de la fila es siempre nuevo (la base exige un UUID)
     if (app.modo === 'nube') {
       const filas = [];
       for (const ev of evs) filas.push({ id: ev.id, datos: await cifrar(ev, 'bitacora'), modulo: 'envios' });
@@ -5917,7 +5919,7 @@ var qrcode = function() {
       el('div', { class: 'fila-botones' }, selLista,
         el('button', { type: 'button', class: 'btn', disabled: !agregar.length, onclick: async () => {
           const ok = await accion(`Lista: ${plural(nNuevas, 'documento agregado', 'documentos agregados')} y ${plural(nActualiza, 'actualizado', 'actualizados')}.`,
-            ...nuevasListas.map(([id, nombre]) => ({ t: 'categoria', id, nombre, motivo: `Creada al importar ${imp.archivo}` })),
+            ...nuevasListas.map(([id, nombre]) => ({ t: 'categoria', lista: id, nombre, motivo: `Creada al importar ${imp.archivo}` })),
             { t: 'lista_alta', entradas: agregar.map((f) => { const { listaNombre, ...e } = f.e; return e; }), fuente: `Importado de ${imp.archivo}`, motivo: 'Importación' });
           if (ok) { app.importacion = null; pintarTodo(); }
         } }, nActualiza ? `Agregar ${nNuevas} y actualizar ${nActualiza}` : `Agregar ${plural(agregar.length, 'documento', 'documentos')}`),
@@ -6005,7 +6007,7 @@ var qrcode = function() {
         const nombreL = v('listaNombre');
         if (!nombreL) { avisar('Escriba el nombre de la nueva lista.', 'mal'); f.elements.listaNombre.focus(); return; }
         lista = idLista(nombreL);
-        if (!categoriaDe(lista)) evs.push({ t: 'categoria', id: lista, nombre: nombreL, palabras: v('listaPalabras'), motivo: 'Creada a mano' });
+        if (!categoriaDe(lista)) evs.push({ t: 'categoria', lista, nombre: nombreL, palabras: v('listaPalabras'), motivo: 'Creada a mano' });
       }
       const boton = f.querySelector('button[type=submit]');
       boton.disabled = true;
@@ -6052,7 +6054,7 @@ var qrcode = function() {
         e.preventDefault();
         const n = limpio(nombre.value), id = c ? c.id : idLista(n);
         if (!c && categoriaDe(id)) { avisar(`Ya existe la lista «${nombreLista(id)}».`, 'mal'); return; }
-        accion(c ? 'Lista actualizada.' : `Lista «${n}» creada: ya se puede elegir al agregar a alguien.`, { t: 'categoria', id, nombre: n, palabras: limpio(palabras.value), motivo: c ? 'Editada' : 'Creada a mano' })
+        accion(c ? 'Lista actualizada.' : `Lista «${n}» creada: ya se puede elegir al agregar a alguien.`, { t: 'categoria', lista: id, nombre: n, palabras: limpio(palabras.value), motivo: c ? 'Editada' : 'Creada a mano' })
           .then((ok) => { if (ok) { app.formulario = { tipo: 'listas', id: null }; pintarVista(); } });
       });
       setTimeout(() => nombre.focus(), 0);
@@ -6372,7 +6374,7 @@ var qrcode = function() {
   }
   /** Agrega eventos a la bitácora del módulo (cifrados) y vuelve a armar todo. */
   async function registrarM(...eventos) {
-    const evs = eventos.map((e) => ({ id: nuevoId(), en: new Date().toISOString(), ...e }));
+    const evs = eventos.map((e) => ({ en: new Date().toISOString(), ...e, id: nuevoId() }));   // el id de la fila es siempre nuevo (la base exige un UUID)
     if (app.modo === 'nube') {
       const filas = [];
       for (const ev of evs) filas.push({ id: ev.id, datos: await cifrar(ev, 'bitacora'), modulo: MODULO });
@@ -7073,8 +7075,10 @@ var qrcode = function() {
     });
     M.sinSerie.sort((a, b) => (b.g.fecha || '').localeCompare(a.g.fecha || ''));
 
-    const numeros = new Map();
-    for (const e of ev) if (e.t === 'numero' && e.serie && e.id && !numeros.has(e.serie)) numeros.set(e.serie, e.id);
+    // Número de expediente de cada serie: el anotado (paquete inicial o a mano) manda sobre el que la página puso sola
+    const numDe = (e) => e.num || (/^S\d+$/.test(e.id || '') ? e.id : '');
+    const numeros = [new Map(), new Map()];        // [anotados, puestos por la página]: serie → número (el primero que se registró)
+    for (const e of ev) if (e.t === 'numero' && e.serie && numDe(e) && !numeros[e.auto ? 1 : 0].has(e.serie)) numeros[e.auto ? 1 : 0].set(e.serie, numDe(e));
     const obs = new Map();
     for (const e of ev) if (e.t === 'observa' && e.serie) { if (!obs.has(e.serie)) obs.set(e.serie, []); obs.get(e.serie).push(e); }
 
@@ -7084,9 +7088,9 @@ var qrcode = function() {
       salidas.push(armarSalida(serie, v.maq, gs, { nombran, ordenG, benefDam, trasPar, trasDam, trasImp, damsImp, obs: obs.get(serie) || [] }));
     }
     // Número de expediente: el que ya tenía (se conserva); las nuevas siguen la numeración por fecha de salida
-    let mayor = Math.max(0, ...[...numeros.values()].map((id) => Number(String(id).replace(/\D/g, '')) || 0));
+    let mayor = Math.max(0, ...ev.filter((e) => e.t === 'numero').map((e) => Number(String(numDe(e)).replace(/\D/g, '')) || 0));
     const usados = new Set();
-    for (const s of salidas) { const id = numeros.get(s.serie); if (id && !usados.has(id)) { s.id = id; usados.add(id); } }
+    for (const m of numeros) for (const s of salidas) { const id = m.get(s.serie); if (!s.id && id && !usados.has(id)) { s.id = id; usados.add(id); } }
     for (const s of [...salidas].filter((x) => !x.id).sort((a, b) => (a.f || '').localeCompare(b.f || '') || a.serie.localeCompare(b.serie))) {
       mayor++;
       s.id = `S${dos(mayor)}`;
@@ -7314,7 +7318,7 @@ var qrcode = function() {
     const nuevas = M.salidas.filter((s) => s.provisional);
     if (!nuevas.length || app.modo !== 'nube') return;
     try {
-      await registrarM(...nuevas.map((s) => ({ t: 'numero', serie: s.serie, id: s.id })));
+      await registrarM(...nuevas.map((s) => ({ t: 'numero', serie: s.serie, num: s.id, auto: true })));
       for (const s of nuevas) s.provisional = false;
     } catch (_) { /* se intentará la próxima vez */ }
   }
@@ -7996,23 +8000,32 @@ var qrcode = function() {
       recalcular();
       partes.push(`${plural(nuevasEmp.length, 'empresa de envíos', 'empresas de envíos')}`);
     }
-    // Maquinaria: archivos ya leídos
+    // Maquinaria: archivos ya leídos y datos del equipo. Si una carga anterior quedó a medias, solo se agrega lo que falta.
     const maq = d.maquinaria || {};
-    if (M.fuentes.some((f) => f.resumen.paquete === d.id) || M.eventos.some((e) => e.paquete === d.id)) {
-      partes.push('maquinaria ya estaba cargada');
-    } else {
-      const fuentes = maq.fuentes || [];
-      for (let i = 0; i < fuentes.length; i++) {
-        const f = fuentes[i];
-        if (!NOMBRE_TIPO_M[f.tipo] || !f.datos) continue;
-        if (avance) avance(`archivos de maquinaria (${i + 1} de ${fuentes.length})…`);
-        f.datos.resumen = { ...(f.datos.resumen || {}), paquete: d.id };
-        await guardarFuente(f.tipo, f.datos, f.control || null);
-      }
-      const evs = (maq.eventos || []).filter((e) => e && ['seguido', 'seguido_baja', 'maquina', 'numero', 'observa', 'serie_guia'].includes(e.t)).map((e) => ({ ...e, paquete: d.id }));
-      await registrarTandas(evs, avance);
-      partes.push(`maquinaria: ${plural(fuentes.length, 'archivo', 'archivos')} y ${plural(evs.length, 'dato del equipo', 'datos del equipo')}`);
+    const fuentes = (maq.fuentes || []).filter((f) => NOMBRE_TIPO_M[f.tipo] && f.datos);
+    const yaF = new Set(M.fuentes.filter((f) => f.resumen.paquete === d.id).map((f) => `${f.tipo}|${f.resumen.archivo}`));
+    const faltan = fuentes.filter((f) => !yaF.has(`${f.tipo}|${(f.datos.resumen || {}).archivo}`));
+    for (let i = 0; i < faltan.length; i++) {
+      const f = faltan[i];
+      if (avance) avance(`archivos de maquinaria (${i + 1} de ${faltan.length})…`);
+      f.datos.resumen = { ...(f.datos.resumen || {}), paquete: d.id };
+      await guardarFuente(f.tipo, f.datos, f.control || null);
     }
+    // Cada dato se compara por su contenido: los que ya están en la bitácora no se repiten. El número de expediente va en «num».
+    const normal = (e) => {
+      const x = { ...e };
+      if (x.t === 'numero' && !x.num && /^S\d+$/.test(x.id || '')) x.num = x.id;
+      for (const k of ['id', 'en', '_creado']) delete x[k];
+      return { ...x, paquete: d.id };
+    };
+    const firma = (e) => JSON.stringify(Object.keys(e).sort().map((k) => [k, e[k]]));
+    const yaE = new Set(M.eventos.filter((e) => e.paquete === d.id).map((e) => firma(normal(e))));
+    const todos = (maq.eventos || []).filter((e) => e && ['seguido', 'seguido_baja', 'maquina', 'numero', 'observa', 'serie_guia'].includes(e.t)).map(normal);
+    const evs = todos.filter((e) => !yaE.has(firma(e)));
+    await registrarTandas(evs, avance);
+    const antes = (fuentes.length - faltan.length) + (todos.length - evs.length);
+    partes.push(!faltan.length && !evs.length ? 'maquinaria ya estaba cargada'
+      : `maquinaria: ${plural(faltan.length, 'archivo', 'archivos')} y ${plural(evs.length, 'dato del equipo', 'datos del equipo')}${antes ? ' (se completó lo que faltaba de una carga anterior)' : ''}`);
     recalcularM();
     await fijarNumeros();
     return `Paquete inicial cargado (${partes.join('; ') || 'nada nuevo'})`;
