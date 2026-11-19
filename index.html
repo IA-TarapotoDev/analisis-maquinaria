@@ -592,6 +592,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   .capa-calor { position: absolute; pointer-events: none; }
   .mapa .calor-punto { stroke: var(--calor-4); stroke-opacity: .7; fill: transparent; cursor: pointer; }
   .mapa .calor-punto:hover { stroke-width: 2.5px; stroke-opacity: 1; }
+  .mapa.modo-actas .aduana-env, .mapa.modo-actas .etq-aduana { display: none; }
+  .calor-etq span[hidden], .calor-etq .calor-guia[hidden] { display: none; }
+  .calor-etq .calor-guia { position: absolute; height: 1.5px; margin-top: -0.75px; background: var(--suave); opacity: .75; transform-origin: 0 50%; pointer-events: none; }
   .calor-etq span { position: absolute; left: 12px; top: -10px; white-space: nowrap; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
     background: var(--sup); color: var(--texto); border: 1px solid var(--borde); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
   .ley-calor { display: inline-block; width: 64px; height: 10px; border-radius: 999px; flex: none;
@@ -5001,6 +5004,7 @@ var qrcode = function() {
     }
     mapa.m.invalidateSize();
     if (mapa.leyendaCaja) mapa.leyendaCaja.replaceChildren(...(app.mapaModo === 'actas' ? leyendaCalor() : leyendaMapa()).childNodes);
+    mapa.lienzo.classList.toggle('modo-actas', app.mapaModo === 'actas');   // en el mapa de calor, la aduana no tapa a Tarapoto
     if (app.mapaModo === 'actas') { dibujarActas(); return; }
     quitarCalor();
     mapa.capa.clearLayers();
@@ -5189,23 +5193,93 @@ var qrcode = function() {
     if (!mapa.m.hasLayer(mapa.calor)) mapa.calor.addTo(mapa.m);
     mapa.calor.ponerPuntos(d.puntos.map((p) => ({ lat: p.lat, lon: p.lon, v: medidaActas(p) })));
     const max = Math.max(1, ...d.puntos.map(medidaActas));
-    d.puntos.forEach((p, i) => {
-      const mk = L.circleMarker([p.lat, p.lon], { radius: 6 + 10 * Math.sqrt(medidaActas(p) / max), className: 'calor-punto', weight: 1.5, fillOpacity: 0.01, bubblingMouseEvents: false });
+    const orden = [...d.puntos].sort((a, b) => medidaActas(b) - medidaActas(a));
+    orden.forEach((p, i) => {
+      p.radio = 6 + 10 * Math.sqrt(medidaActas(p) / max);
+      const mk = L.circleMarker([p.lat, p.lon], { radius: p.radio, className: 'calor-punto', weight: 1.5, fillOpacity: 0.01, bubblingMouseEvents: false });
       mk.bindTooltip(el('div', {}, el('b', { text: `${p.nombre}` }), el('br'), `${plural(p.n, 'acta', 'actas')} · valor ${valorTxt(p.valor)}`), { direction: 'top', opacity: 1 });
       mk.bindPopup(() => popupActas(p), { maxWidth: 380, minWidth: 260, maxHeight: 340, autoPanPadding: [40, 40] });
       mk.addTo(mapa.capa);
       p.marcador = mk;
-      if (i < 8) L.marker([p.lat, p.lon], { interactive: false, keyboard: false, icon: L.divIcon({ className: 'calor-etq', html: el('span', { text: `${p.nombre} · ${app.filtroActas.medida === 'valor' ? valorTxt(p.valor) : p.n}` }), iconSize: null }) }).addTo(mapa.capa);
+      p.etq = i < 12 ? L.marker([p.lat, p.lon], { interactive: false, keyboard: false, icon: L.divIcon({ className: 'calor-etq', html: el('span', { text: `${p.nombre} · ${app.filtroActas.medida === 'valor' ? valorTxt(p.valor) : p.n}` }), iconSize: null }) }).addTo(mapa.capa) : null;
     });
+    mapa.etiquetas = orden.filter((p) => p.etq);
     const firma = `actas|${d.puntos.map((p) => p.u).sort().join('|')}`;
     if (firma !== mapa.firma) {
       mapa.firma = firma;
       if (d.puntos.length) mapa.m.fitBounds(L.latLngBounds(d.puntos.map((p) => [p.lat, p.lon])), { padding: [70, 70], maxZoom: 9 });
     }
-    const conPunto = new Set(d.puntos.slice(0, 8).map((p) => p.u));
-    for (const c of mapa.ciudades) { const e = c.mk.getElement(); if (e) e.classList.toggle('tapada', conPunto.has(c.u)); }
+    mapa.m.off('zoomend moveend resize', acomodarEtiquetas);
+    mapa.m.on('zoomend moveend resize', acomodarEtiquetas);
+    acomodarEtiquetas();
   }
-  function quitarCalor() { if (mapa.m && mapa.calor && mapa.m.hasLayer(mapa.calor)) mapa.m.removeLayer(mapa.calor); }
+  /**
+   * Las etiquetas del mapa de calor no se tapan: de la de más actas a la de menos, cada una va al primer lado libre de su círculo
+   * (derecha, izquierda, arriba, abajo o en diagonal) sin tapar otra etiqueta ni otro distrito. La que no cabe se oculta hasta acercar
+   * el mapa (su número sigue al pasar el cursor). Los nombres del mapa base que chocan con una etiqueta también se ocultan.
+   */
+  function acomodarEtiquetas() {
+    const m = mapa.m;
+    if (!m || app.mapaModo !== 'actas' || !mapa.etiquetas) return;
+    const tam = m.getSize();
+    const ocupado = [], circulos = [];
+    // Un rectángulo choca con otra etiqueta (rectángulo) o con un círculo de distrito (se mide como círculo, no como cuadrado)
+    const tocaCirculo = (r, c) => { const x = Math.max(r.x1, Math.min(c.x, r.x2)), y = Math.max(r.y1, Math.min(c.y, r.y2)); return (x - c.x) ** 2 + (y - c.y) ** 2 < c.r * c.r; };
+    const choca = (r) => ocupado.some((o) => r.x1 < o.x2 && r.x2 > o.x1 && r.y1 < o.y2 && r.y2 > o.y1) || circulos.some((c) => tocaCirculo(r, c));
+    const dentro = (r) => r.x1 >= 2 && r.y1 >= 2 && r.x2 <= tam.x - 2 && r.y2 <= tam.y - 2;
+    for (const p of (mapa.actasDatos ? mapa.actasDatos.puntos : [])) { const q = m.latLngToContainerPoint([p.lat, p.lon]); circulos.push({ x: q.x, y: q.y, r: (p.radio || 6) + 1.5 }); }
+    const visibles = new Set();
+    for (const p of mapa.etiquetas) {
+      const e = p.etq.getElement(), span = e && e.firstChild;
+      if (!span) continue;
+      span.hidden = false;
+      const w = span.offsetWidth, h = span.offsetHeight, q = m.latLngToContainerPoint([p.lat, p.lon]);
+      // Primero pegada a su círculo; si ahí choca, un poco más lejos (hasta unos 30 px): derecha, izquierda, arriba, abajo y diagonales
+      let lugar = null, lejos = false;
+      for (const extra of [4, 12, 22, 32]) {
+        lejos = extra > 4;
+        const r = (p.radio || 6) + extra, k = Math.round(r * 0.72);
+        for (const [dx, dy] of [[r, -h / 2], [-r - w, -h / 2], [-w / 2, -r - h], [-w / 2, r], [k, -k - h], [-k - w, -k - h], [k, k], [-k - w, k]]) {
+          const rect = { x1: q.x + dx, y1: q.y + dy, x2: q.x + dx + w, y2: q.y + dy + h };
+          if (!choca(rect) && dentro(rect)) { lugar = [dx, dy, rect]; break; }
+        }
+        if (lugar) break;
+      }
+      let guia = e.querySelector('i.calor-guia');
+      if (!guia) { guia = document.createElement('i'); guia.className = 'calor-guia'; e.append(guia); }
+      if (!lugar) { span.hidden = true; guia.hidden = true; continue; }
+      span.style.left = `${Math.round(lugar[0])}px`;
+      span.style.top = `${Math.round(lugar[1])}px`;
+      // Si la etiqueta quedó separada de su círculo, una línea fina las une
+      const nx = Math.min(Math.max(0, lugar[0]), lugar[0] + w), ny = Math.min(Math.max(0, lugar[1]), lugar[1] + h);
+      const largo = Math.hypot(nx, ny), r0 = p.radio || 6;
+      guia.hidden = !lejos || largo < r0 + 4;
+      if (!guia.hidden) {
+        const ang = Math.atan2(ny, nx);
+        Object.assign(guia.style, { left: `${(Math.cos(ang) * r0).toFixed(1)}px`, top: `${(Math.sin(ang) * r0).toFixed(1)}px`, width: `${(largo - r0).toFixed(1)}px`, transform: `rotate(${ang.toFixed(3)}rad)` });
+      }
+      ocupado.push({ x1: lugar[2].x1 - 3, y1: lugar[2].y1 - 2, x2: lugar[2].x2 + 3, y2: lugar[2].y2 + 2 });
+      visibles.add(p.u);
+    }
+    // Nombres de las ciudades del mapa base: fuera si ya los dice una etiqueta o si chocan con una
+    const base = m.getContainer().getBoundingClientRect();
+    for (const c of mapa.ciudades) {
+      const e = c.mk.getElement();
+      if (!e) continue;
+      e.classList.remove('tapada');
+      if (visibles.has(c.u)) { e.classList.add('tapada'); continue; }
+      const sp = e.querySelector('span');
+      const b = sp && sp.getBoundingClientRect();
+      if (!b || !b.width) continue;
+      if (choca({ x1: b.left - base.left, y1: b.top - base.top, x2: b.right - base.left, y2: b.bottom - base.top })) e.classList.add('tapada');
+    }
+  }
+  function quitarCalor() {
+    if (!mapa.m) return;
+    mapa.m.off('zoomend moveend resize', acomodarEtiquetas);
+    if (mapa.calor && mapa.m.hasLayer(mapa.calor)) mapa.m.removeLayer(mapa.calor);
+    mapa.etiquetas = null;
+  }
 
   /** Lado del mapa en modo «Intervenciones»: filtros, dónde se interviene, hacia dónde iba y de dónde venía la mercancía. */
   function ladoActas(d) {
