@@ -1,6 +1,6 @@
 /* =====================================================================
  * EXTRACTOR DE GRE – Guías de Remisión Electrónica (SUNAT, uso autorizado)
- * Versión 3.3.0
+ * Versión 3.5.0
  *
  * Dónde ejecutarlo:
  *   Microsoft Edge > DevTools (F12) > Console > selector de contexto
@@ -29,10 +29,17 @@
  *   - Si se detiene, conserva lo ya encontrado.
  *   - Las guías citadas en las facturas se consultan directamente por su número.
  *   - Si la conexión vence, espera a que se abra una guía con «Ver» y continúa.
+ *   - Desde la 3.5: dos consultas a la vez con pausas cortas; si SUNAT se satura
+ *     (429, 5xx, cortes o respuestas lentas) baja solo el ritmo y luego lo recupera.
+ *     Primero abre las series que más guías traen a la jurisdicción (si la lista
+ *     trae ese dato); no se salta ninguna. Lo que falló por saturación se vuelve a
+ *     pedir al final. Los números que no existen quedan anotados en el JSON.
+ *   - Con la extensión de Edge, entrega lo obtenido por partes a la página.
  *
  * Seguridad:
- *   - El token solo vive en memoria y se descarta al terminar: nunca se muestra,
- *     se guarda ni se exporta.
+ *   - El token solo vive en memoria: nunca se muestra, se guarda ni se exporta.
+ *     Se descarta al terminar (con la extensión, se conserva en memoria mientras
+ *     la pantalla de SUNAT siga abierta, para la siguiente búsqueda).
  *   - No usa localStorage, sessionStorage, cookies ni servidores externos.
  *   - credentials: "omit" y mode: "cors" (nunca "no-cors").
  *   - La escucha de la pantalla de SUNAT es temporal y deja la página como estaba.
@@ -42,10 +49,12 @@
 (() => {
   'use strict';
 
-  const VERSION = '3.4.0';
+  const VERSION = '3.5.0';
   const API_LISTADO = 'https://api-intranet.sunat.peru/v1/contribuyente/gre/comprobantes';
   const PANEL_ID = 'gre-extractor-host';
   const ORIGEN_CORRECTO = 'https://intranet.sunat.peru';
+  // Cargado por la extensión «Gestión de Riesgo»: sin panel hasta que se use y escuchando la conexión desde que abre la pantalla
+  const MODO_EXTENSION = (() => { try { return window.__GRE_EXTENSION__ === true; } catch (_) { return false; } })();
 
   /* ---------------------------------------------------------------
    * 0. Contexto de la consola, ejecución única y versión anterior
@@ -127,8 +136,9 @@
     perPage: 100,
     maxDiasBloque: 31,          // días máximos por consulta (se reduce solo si SUNAT lo rechaza)
     objetivoPorBusqueda: 80,    // guías esperadas por consulta, para no pasar el límite de 100
-    pausaMinMs: 600,
-    pausaMaxMs: 900,
+    pausaMinMs: 250,            // pausa entre consultas; si SUNAT responde lento o con error, se alarga sola (hasta 4 veces)
+    pausaMaxMs: 400,
+    simultaneas: 2,             // consultas a la vez al abrir guías y al pedirlas por número (1 = una por una)
     maxReintentos: 2,
     timeoutMs: 45000,
     maxErroresConsecutivos: 8,
@@ -497,11 +507,51 @@
     return min + Math.floor(Math.random() * (max - min + 1));
   }
 
-  /** Pausa entre solicitudes (la primera de la ejecución no espera). Con tope de tiempo, al llegar se detiene. */
+  /**
+   * Pausa entre solicitudes (la primera de la ejecución no espera). Con tope de tiempo, al llegar se detiene.
+   * Si SUNAT responde lento o con errores temporales, la pausa se alarga sola (ritmo.factor) y vuelve de a poco.
+   */
   async function esperarTurno(ctx) {
     if (ctx.limite && Date.now() >= ctx.limite) throw new ErrorTope();
-    if (ctx.solicitudes > 0) await dormir(pausaAleatoria(ctx.cfg), ctx.signal);
+    if (ctx.solicitudes > 0) await dormir(Math.round(pausaAleatoria(ctx.cfg) * (ctx.ritmo ? ctx.ritmo.factor : 1)), ctx.signal);
     ctx.solicitudes++;
+    if (ctx.cfg && ctx.cfg.alEntregar) entregarSiToca();
+  }
+  /** El ritmo se adapta a SUNAT: un error temporal (429, 5xx, red) o una respuesta muy lenta frena; 40 respuestas buenas seguidas aceleran. */
+  function notarRitmo(ctx, bien, ms = 0) {
+    const R = ctx.ritmo;
+    if (!R) return;
+    if (!bien || ms > 4000) {
+      R.exitos = 0;
+      if (R.factor < 4) {
+        R.factor = Math.min(4, R.factor * 2);
+        estado.progreso.frenos = (estado.progreso.frenos || 0) + 1;
+        log(`SUNAT responde ${bien ? 'lento' : 'con errores temporales'}: se espacian las consultas${R.factor >= 2 ? ' y se hacen de a una' : ''}.`, 'warn');
+      }
+      return;
+    }
+    R.exitos++;
+    if (R.factor > 1 && R.exitos >= 40) {
+      R.factor = Math.max(1, R.factor / 2);
+      R.exitos = 0;
+      if (R.factor === 1) log('SUNAT responde bien otra vez: ritmo normal.', 'ok');
+    }
+  }
+  /** Corre «fn» sobre la lista con hasta n trabajos a la vez (con el ritmo frenado, de a uno). Si uno falla, se detienen todos. */
+  async function enParalelo(ctx, lista, n, fn) {
+    let i = 0, error = null;
+    const trabajador = async (id) => {
+      while (!error && i < lista.length) {
+        if (id > 0 && ctx.ritmo && ctx.ritmo.factor >= 2) {
+          try { await dormir(500, ctx.signal); } catch (e) { error = error || e; }
+          continue;
+        }
+        const x = lista[i++];
+        try { await fn(x); } catch (e) { error = error || e; }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(n || 1, lista.length)) }, (_, id) => trabajador(id)));
+    if (error) throw error;
   }
 
   /* ---------------------------------------------------------------
@@ -622,7 +672,8 @@
       if (!parsearFecha(desde) || !parsearFecha(hasta) || desde > hasta || desde > hoy) { ignoradas++; return; }
       if (hasta > hoy) { hasta = hoy; horaHasta = null; }
       if (desde === hasta && D.hora !== null && horaHasta !== null && horaHasta <= D.hora) { ignoradas++; return; }
-      busquedas.push({ tipo: 'listado', etiqueta, caso, grupo, rucEmisor: rucE, rucReceptor: rucR, tipos: normalizarTipos(b.tipos), desde, hasta, horaDesde: D.hora, horaHasta });
+      busquedas.push({ tipo: 'listado', etiqueta, caso, grupo, rucEmisor: rucE, rucReceptor: rucR, tipos: normalizarTipos(b.tipos), desde, hasta, horaDesde: D.hora, horaHasta,
+        soloEmisores: b.soloEmisores === true });
     });
     if (!busquedas.length) throw new ErrorValidacion('La lista no tiene búsquedas válidas.');
     const conocidas = Array.isArray(p.conocidas) ? p.conocidas.filter((x) => typeof x === 'string' && x) : [];
@@ -635,7 +686,20 @@
       if (!esVacio(o.topeMin)) opciones.topeMin = decimal(o.topeMin, 'Tope de tiempo de la lista (minutos)', 0, 600, 0);
       if (o.deptoLlegada !== undefined) opciones.deptoLlegada = deptosDe(o.deptoLlegada);
       if (!esVacio(o.destinoNombre)) opciones.destinoNombre = limpio(o.destinoNombre).slice(0, 80);
+      if (!esVacio(o.simultaneas)) opciones.simultaneas = entero(o.simultaneas, 'Consultas a la vez', 1, 4, CONFIG_PREDETERMINADA.simultaneas);
+      if (!esVacio(o.pausaMinMs)) opciones.pausaMinMs = entero(o.pausaMinMs, 'Pausa mínima', 0, 60000, CONFIG_PREDETERMINADA.pausaMinMs);
+      if (!esVacio(o.pausaMaxMs)) opciones.pausaMaxMs = entero(o.pausaMaxMs, 'Pausa máxima', 0, 60000, CONFIG_PREDETERMINADA.pausaMaxMs);
     }
+    // Rendimiento de cada serie (0 a 1: qué parte de sus guías sirve): se abren primero las que más rinden. No se salta ninguna.
+    const prioridadSeries = new Map();
+    if (esObjetoPlano(p.prioridadSeries)) {
+      for (const [k, v] of Object.entries(p.prioridadSeries)) {
+        const n = Number(v);
+        if (/^\d{11}\|[0-9A-Z]{2}\|[A-Z0-9]{4}$/.test(k) && Number.isFinite(n)) prioridadSeries.set(k, Math.max(0, Math.min(1, n)));
+      }
+    }
+    // Emisores cuyas guías sí se abren en las búsquedas marcadas «soloEmisores» (las demás quedan solo listadas)
+    const emisoresFiltro = new Set((Array.isArray(p.emisoresFiltro) ? p.emisoresFiltro : []).map((x) => limpio(x)).filter(rucValido));
     const prioridad = new Set();
     for (const d of Array.isArray(p.prioridad) ? p.prioridad : []) for (const x of docsDe(d)) prioridad.add(x);
     const anclas = [];
@@ -650,7 +714,7 @@
     const ventana = esObjetoPlano(p.ventana) && limpio(p.ventana.desde) && limpio(p.ventana.hasta) ? { desde: limpio(p.ventana.desde), hasta: limpio(p.ventana.hasta) } : null;
     return {
       id: limpio(p.id) || 'lista', titulo: limpio(p.titulo) || 'Lista del tablero', generado: limpio(p.generado),
-      busquedas, conocidas, ignoradas, opciones, prioridad, anclas, ventana
+      busquedas, conocidas, ignoradas, opciones, prioridad, anclas, ventana, prioridadSeries, emisoresFiltro
     };
   }
 
@@ -698,6 +762,11 @@
       destinoNombre: (pedido && pedido.opciones.destinoNombre) || '',
       prioridad: pedido ? pedido.prioridad : new Set(),
       anclas: pedido ? pedido.anclas : [],
+      prioridadSeries: pedido ? pedido.prioridadSeries : new Map(),
+      emisoresFiltro: pedido ? pedido.emisoresFiltro : new Set(),
+      simultaneas: entero(elegir('simultaneas'), 'Consultas a la vez', 1, 4, D.simultaneas),
+      // Entregas por partes (la extensión las pasa a la página, que las guarda al instante)
+      alEntregar: typeof op.alEntregar === 'function' ? op.alEntregar : null,
       numSerie: limpio(op.numSerie ?? op.serie).toUpperCase(),
       numCpe: limpio(op.numCpe ?? op.numero),
       codEstado: limpio(op.codEstado),
@@ -722,8 +791,8 @@
       const p = entero(op.pausaMs, 'Pausa', 0, 60000, D.pausaMinMs);
       cfg.pausaMinMs = p; cfg.pausaMaxMs = p;
     } else {
-      cfg.pausaMinMs = entero(op.pausaMinMs, 'Pausa mínima', 0, 60000, D.pausaMinMs);
-      cfg.pausaMaxMs = entero(op.pausaMaxMs, 'Pausa máxima', 0, 60000, D.pausaMaxMs);
+      cfg.pausaMinMs = entero(elegir('pausaMinMs'), 'Pausa mínima', 0, 60000, D.pausaMinMs);
+      cfg.pausaMaxMs = entero(elegir('pausaMaxMs'), 'Pausa máxima', 0, 60000, D.pausaMaxMs);
       if (cfg.pausaMinMs > cfg.pausaMaxMs) [cfg.pausaMinMs, cfg.pausaMaxMs] = [cfg.pausaMaxMs, cfg.pausaMinMs];
     }
     if (cfg.numCpe && !/^\d+$/.test(cfg.numCpe)) throw new ErrorValidacion('El número de guía debe tener solo dígitos.');
@@ -856,7 +925,7 @@
     if (!cfg) return {};
     // Nunca la lista de prioridad ni las anclas: solo se usan en memoria.
     const claves = ['origen', 'rucs', 'rol', 'tipos', 'periodos', 'numSerie', 'numCpe', 'codEstado', 'codSubEstado',
-      'tipBusqueda', 'perPage', 'maxDiasBloque', 'pausaMinMs', 'pausaMaxMs', 'maxReintentos', 'soloLista', 'rellenar', 'topeMin', 'deptos'];
+      'tipBusqueda', 'perPage', 'maxDiasBloque', 'pausaMinMs', 'pausaMaxMs', 'simultaneas', 'maxReintentos', 'soloLista', 'rellenar', 'topeMin', 'deptos'];
     const r = {};
     for (const k of claves) if (cfg[k] !== undefined) r[k] = Array.isArray(cfg[k]) ? JSON.parse(JSON.stringify(cfg[k])) : cfg[k];
     return r;
@@ -1010,6 +1079,7 @@
       const temporizador = setTimeout(() => { porTimeout = true; ctrl.abort(); }, cfg.timeoutMs);
 
       let resp = null, cuerpo = '';
+      const t0 = Date.now();
       try {
         // Misma forma que la solicitud de la aplicación (y sus mismas cabeceras, si se tomaron).
         resp = await fetchPropio.call(window, url, {
@@ -1030,6 +1100,7 @@
         if (signal.aborted) throw crearAbortError();
         // Una conexión vencida suele verse como «Failed to fetch»: se pide una nueva y se repite.
         if (tokenPorVencer(ctx)) { intento--; continue; }
+        notarRitmo(ctx, false);
         const msg = porTimeout
           ? `Tiempo de espera agotado (${cfg.timeoutMs} ms)`
           : `SUNAT no respondió o el navegador bloqueó la respuesta (${(e && e.message) || e})`;
@@ -1040,6 +1111,8 @@
       clearTimeout(temporizador);
       signal.removeEventListener('abort', alCancelar);
       const status = resp.status;
+      if (ESTADOS_REINTENTABLES.has(status)) notarRitmo(ctx, false);
+      else if (status !== 401 && status !== 403) notarRitmo(ctx, true, Date.now() - t0);
 
       // 401: la conexión no sirve → se espera una nueva y se repite (máximo 2 veces)
       if (status === 401) {
@@ -1222,6 +1295,8 @@
     for (const it of items) {
       if (!esObjetoPlano(it)) continue;
       const clave = claveGuia(it.rucEmisor, it.codCpe, it.numSerie, it.numCpe);
+      // Una búsqueda «soloEmisores» abre solo las guías de los emisores de la lista; las demás búsquedas abren todo lo que hallan
+      if (estado.abrirSiempre && (!tarea.soloEmisores || (estado.config && estado.config.emisoresFiltro && estado.config.emisoresFiltro.has(texto(it.rucEmisor).trim())))) estado.abrirSiempre.add(clave);
       if (tarea.vistas.has(clave)) { estado.duplicados.push(clave); continue; }
       tarea.vistas.add(clave);
       tarea.encontradas++;
@@ -1530,12 +1605,17 @@
    * listado figura en ella (DNI o RUC; un RUC 10 contiene el DNI); el resto mantiene el orden de las búsquedas.
    */
   function prepararUnicos(encontradas) {
-    const prio = estado.config && estado.config.prioridad;
+    const cfg = estado.config || {};
+    const prio = cfg.prioridad;
     const lista = [...encontradas.entries()].map(([clave, item]) => ({ clave, item, prioritaria: false }));
-    if (prio && prio.size) {
-      for (const u of lista) u.prioritaria = !u.item.__directa && docsDe(u.item.rucReceptor).some((d) => prio.has(d));
-      lista.sort((a, b) => Number(b.prioritaria) - Number(a.prioritaria)); // orden estable: el resto no cambia
+    for (const u of lista) {
+      u.prioritaria = !!(prio && prio.size) && !u.item.__directa && docsDe(u.item.rucReceptor).some((d) => prio.has(d));
+      u.peso = pesoSerie(cfg, u.item.rucEmisor, u.item.codCpe, u.item.numSerie);
+      u.tramo = u.prioritaria || u.peso >= UMBRAL_TRAMO ? 'alto' : 'bajo';
+      u.abrir = !estado.abrirSiempre || estado.abrirSiempre.has(u.clave);
     }
+    // Primero la lista de prioridad y luego las series que más rinden (orden estable: a igual peso no cambia)
+    lista.sort((a, b) => Number(b.prioritaria) - Number(a.prioritaria) || b.peso - a.peso);
     estado.unicos = lista;
     for (const { clave, item, prioritaria } of lista) {
       if (!estado.resultados.has(clave)) estado.resultados.set(clave, crearRegistro(clave, item, prioritaria ? { prioritaria: true } : {}));
@@ -1558,30 +1638,44 @@
     }
   }
 
-  async function obtenerDetalles(ctx) {
+  /** Rendimiento de la serie de una guía (0 a 1, lo dice la lista); sin dato, 0,5. Las de menos de 0,15 se abren al final. */
+  const UMBRAL_TRAMO = 0.15;
+  function pesoSerie(cfg, ruc, cod, serie) {
+    const v = cfg.prioridadSeries && cfg.prioridadSeries.get(`${texto(ruc).trim()}|${texto(cod).trim()}|${texto(serie).trim()}`);
+    return v === undefined ? 0.5 : v;
+  }
+  const tramoDe = (cfg, ruc, cod, serie) => (pesoSerie(cfg, ruc, cod, serie) >= UMBRAL_TRAMO ? 'alto' : 'bajo');
+
+  /**
+   * Fase 2: el detalle de cada guía del listado. Primero las de la lista de prioridad y las series que más rinden
+   * («tramo» alto); las de series que casi nunca sirven, al final (tramo bajo). Varias consultas a la vez.
+   */
+  async function obtenerDetalles(ctx, tramo = 'todo') {
     const { cfg, signal } = ctx;
     const P = estado.progreso;
-    P.total = estado.unicos.length;
-    const conocidas = new Set(cfg.conocidas || []);
+    const conocidas = ctx.conocidas || (ctx.conocidas = new Set(cfg.conocidas || []));
     const yaObtenida = (clave) => estado.previos.get(clave) || estado.memoria.get(clave);
-    P.pendientesReales = estado.unicos.filter((u) => !yaObtenida(u.clave) && !conocidas.has(u.clave)).length;
-    estado.tiempos.inicioDetalle = Date.now();
-    const yaTablero = estado.unicos.filter((u) => conocidas.has(u.clave) && !yaObtenida(u.clave)).length;
-    const reutilizadas = P.total - P.pendientesReales - yaTablero;
-    if (yaTablero) log(`${yaTablero} guía(s) ya están en el tablero: solo se anota su estado actual.`, 'ok');
-    if (reutilizadas) log(`${reutilizadas} guía(s) ya se habían obtenido antes y no se volverán a consultar.`, 'ok');
-    if (P.pendientesReales) log(`Descargando el detalle de ${P.pendientesReales} guía(s)…`);
-
-    let consecutivos = 0;
-    // Consultas por número: por serie, cuántos números posteriores a la última guía conocida no existen seguidos
-    const series = new Map();
-    const serieDe = (it) => `${it.rucEmisor}|${it.codCpe}|${it.numSerie}`;
-    for (const { clave, item } of estado.unicos) {
+    if (!estado.tiempos.inicioDetalle) {
+      P.total = estado.unicos.length;
+      P.pendientesReales = estado.unicos.filter((u) => !yaObtenida(u.clave) && !conocidas.has(u.clave) && u.abrir !== false).length;
+      estado.tiempos.inicioDetalle = Date.now();
+      const yaTablero = estado.unicos.filter((u) => conocidas.has(u.clave) && !yaObtenida(u.clave)).length;
+      const reutilizadas = estado.unicos.filter((u) => yaObtenida(u.clave)).length;
+      const filtradas = estado.unicos.filter((u) => u.abrir === false && !conocidas.has(u.clave)).length;
+      if (yaTablero) log(`${yaTablero} guía(s) ya están en el tablero: solo se anota su estado actual.`, 'ok');
+      if (reutilizadas) log(`${reutilizadas} guía(s) ya se habían obtenido antes y no se volverán a consultar.`, 'ok');
+      if (filtradas) log(`${filtradas} guía(s) quedan solo listadas: su emisor no está entre los que se abren para esa búsqueda.`, 'ok');
+      if (P.pendientesReales) log(`Descargando el detalle de ${P.pendientesReales} guía(s)${cfg.simultaneas > 1 ? `, ${cfg.simultaneas} a la vez` : ''}…`);
+    }
+    const series = ctx.seriesDirectas || (ctx.seriesDirectas = new Map());
+    const porAbrir = [];
+    for (const u of estado.unicos) {
+      if (tramo !== 'todo' && u.tramo !== tramo) continue;
       if (signal.aborted) throw crearAbortError();
+      const { clave, item } = u;
       const reg = estado.resultados.get(clave);
+      if (reg.procesada || reg.fueraDestino) continue;
       const etiqueta = guiaLegible(item.numSerie, item.numCpe) || clave;
-      P.actual = etiqueta;
-
       // Ya obtenida antes (archivo anterior o ejecución anterior de esta sesión)
       const pv = yaObtenida(clave);
       if (pv) {
@@ -1589,7 +1683,6 @@
           Object.assign(reg, { http: 'REUTILIZADA', consultadoEn: pv.consultadoEn, origen: estado.previos.has(clave) ? 'previo' : 'memoria' });
           marcarFuera(reg, llegadaDe(pv.detalle));
           P.omitidas++; P.procesadas++;
-          actualizarUI();
           continue;
         }
         Object.assign(reg, {
@@ -1598,7 +1691,6 @@
         });
         compararListadoDetalle(clave, item, pv.detalle);
         P.omitidas++; P.ok++; P.procesadas++;
-        actualizarUI();
         continue;
       }
       // Ya abierta en esta sesión y no llega al destino: no se vuelve a consultar
@@ -1606,17 +1698,20 @@
         Object.assign(reg, { http: 'REUTILIZADA', origen: 'memoria' });
         marcarFuera(reg, estado.fueraVistas.get(clave));
         P.omitidas++; P.procesadas++;
-        actualizarUI();
         continue;
       }
       // Ya está en el tablero: no se descarga de nuevo (el listado trae su estado actual)
       if (conocidas.has(clave)) {
         Object.assign(reg, { procesada: true, origen: 'conocida', http: 'YA_EN_TABLERO' });
         P.omitidas++; P.procesadas++;
-        actualizarUI();
         continue;
       }
-
+      // Búsqueda que abre solo guías de ciertos emisores (por ejemplo, un tenedor como destinatario): las demás quedan listadas
+      if (u.abrir === false) {
+        Object.assign(reg, { soloListado: true, origen: 'filtrada' });
+        P.omitidas++; P.procesadas++;
+        continue;
+      }
       // Datos mínimos para armar la dirección
       const faltan = ['rucEmisor', 'codCpe', 'numSerie', 'numCpe'].filter((k) => esVacio(item[k]));
       if (faltan.length) {
@@ -1625,75 +1720,92 @@
         Object.assign(reg, { procesada: true, error: msg });
         P.error++; P.procesadas++;
         log(`${etiqueta}: ${msg}`, 'warn');
-        actualizarUI();
         continue;
       }
+      porAbrir.push(u);
+    }
+    actualizarUI();
+    // Las del listado, varias a la vez; las pedidas por número, en orden (para saber cuándo termina una serie)
+    await enParalelo(ctx, porAbrir.filter((u) => !u.item.__directa), cfg.simultaneas, (u) => abrirGuia(ctx, u, series));
+    for (const u of porAbrir.filter((x) => x.item.__directa)) await abrirGuia(ctx, u, series);
+  }
 
-      // Serie que ya llegó a su último número emitido: los siguientes aún no existen
-      const sv = item.__directa ? series.get(serieDe(item)) : null;
-      if (item.__posterior && sv && sv.cerrada && Number(item.numCpe) > sv.ultimo) {
-        Object.assign(reg, {
-          procesada: true, origen: 'fin_de_serie', http: 'NO_CONSULTADA', noConsultada: true,
-          error: `No se consultó: los ${cfg.maxNoExistenSerie} números anteriores de la serie ${item.numSerie} no existen todavía`
-        });
-        P.omitidas++; P.procesadas++;
-        actualizarUI();
-        continue;
-      }
-
-      await esperarTurno(ctx);
-      const url = construirUrlDetalle(item);
-      const r = await pedirJSON(url, ctx, etiqueta, clave, { directa: !!item.__directa });
-      P.consultadas++;
-      reg.procesada = true;
-      reg.intentos = r.intentos;
-      reg.http = r.status;
-      reg.consultadoEn = fechaHoraLocal();
-
-      const dijoNoExiste = r.ok && esObjetoPlano(r.data) && !pareceDetalle(r.data) && NO_EXISTE.test(JSON.stringify(r.data).slice(0, 2000));
-      if (r.ok && esObjetoPlano(r.data) && (!item.__directa || pareceDetalle(r.data))) {
-        consecutivos = 0;
-        if (item.__directa) series.set(serieDe(item), { racha: 0, ultimo: 0, cerrada: false });
-        if (!llegaAlDestino(cfg, r.data)) {
-          marcarFuera(reg, llegadaDe(r.data));
-          log(`${P.procesadas + 1}/${P.total} ${etiqueta}: llega a otro departamento (no se guarda)`, 'debug');
-        } else {
-          reg.ok = true;
-          reg.detalle = r.data;
-          P.ok++;
-          compararListadoDetalle(clave, item, r.data);
-          log(`${P.procesadas + 1}/${P.total} ${etiqueta} OK (${obtenerBienes(r.data).length} bien(es))`, 'debug');
-        }
-      } else if (item.__directa && (r.noExiste || r.status === 404 || dijoNoExiste)) {
-        // La guía no existe: es una respuesta válida de SUNAT (número aún no emitido, guía física o de otro tipo)
-        reg.noExiste = true;
-        reg.error = 'La guía no existe en SUNAT (número aún no emitido, guía física o de otro tipo)';
-        P.noExisten = (P.noExisten || 0) + 1;
-        consecutivos = 0;
-        const s0 = series.get(serieDe(item)) || { racha: 0, ultimo: 0, cerrada: false };
-        if (item.__posterior) {
-          s0.racha++;
-          s0.ultimo = Math.max(s0.ultimo, Number(item.numCpe));
-          if (!s0.cerrada && s0.racha >= cfg.maxNoExistenSerie) {
-            s0.cerrada = true;
-            log(`Serie ${item.numSerie}: ${s0.racha} números seguidos no existen; se omiten los siguientes de esa serie.`, 'ok');
-          }
-        }
-        series.set(serieDe(item), s0);
-        log(`Guía ${etiqueta}: no existe.`, 'debug');
-      } else {
-        reg.error = r.ok ? 'La respuesta no contiene el detalle de la guía' : r.mensaje;
-        if (r.ok) registrarError({ guia: etiqueta, clave, url, estadoHttp: r.status, mensaje: reg.error, intento: r.intentos, accion: 'OMITIDA' });
-        P.error++;
-        if (r.status !== 404) consecutivos++;
-        log(`Guía ${etiqueta}: ${reg.error}`, 'warn');
-      }
-      P.procesadas++;
+  /** Abre una guía (consulta su detalle) y anota el resultado. */
+  async function abrirGuia(ctx, u, series) {
+    const { cfg, signal } = ctx;
+    const P = estado.progreso;
+    const { clave, item } = u;
+    if (signal.aborted) throw crearAbortError();
+    const reg = estado.resultados.get(clave);
+    const etiqueta = guiaLegible(item.numSerie, item.numCpe) || clave;
+    const serieDe = (it) => `${it.rucEmisor}|${it.codCpe}|${it.numSerie}`;
+    P.actual = etiqueta;
+    // Serie que ya llegó a su último número emitido: los siguientes aún no existen
+    const sv = item.__directa ? series.get(serieDe(item)) : null;
+    if (item.__posterior && sv && sv.cerrada && Number(item.numCpe) > sv.ultimo) {
+      Object.assign(reg, {
+        procesada: true, origen: 'fin_de_serie', http: 'NO_CONSULTADA', noConsultada: true,
+        error: `No se consultó: los ${cfg.maxNoExistenSerie} números anteriores de la serie ${item.numSerie} no existen todavía`
+      });
+      P.omitidas++; P.procesadas++;
       actualizarUI();
+      return;
+    }
 
-      if (consecutivos >= cfg.maxErroresConsecutivos) {
-        throw new ErrorDetencion(`Se detuvo tras ${consecutivos} errores seguidos (posible problema de red o de SUNAT). Lo obtenido se conserva.`);
+    await esperarTurno(ctx);
+    const url = construirUrlDetalle(item);
+    const r = await pedirJSON(url, ctx, etiqueta, clave, { directa: !!item.__directa });
+    P.consultadas++;
+    reg.procesada = true;
+    reg.intentos = r.intentos;
+    reg.http = r.status;
+    reg.consultadoEn = fechaHoraLocal();
+
+    const dijoNoExiste = r.ok && esObjetoPlano(r.data) && !pareceDetalle(r.data) && NO_EXISTE.test(JSON.stringify(r.data).slice(0, 2000));
+    if (r.ok && esObjetoPlano(r.data) && (!item.__directa || pareceDetalle(r.data))) {
+      ctx.erroresSeguidos = 0;
+      if (item.__directa) series.set(serieDe(item), { racha: 0, ultimo: 0, cerrada: false });
+      if (!llegaAlDestino(cfg, r.data)) {
+        marcarFuera(reg, llegadaDe(r.data));
+        log(`${P.procesadas + 1}/${P.total} ${etiqueta}: llega a otro departamento (no se guarda)`, 'debug');
+      } else {
+        reg.ok = true;
+        reg.detalle = r.data;
+        P.ok++;
+        compararListadoDetalle(clave, item, r.data);
+        log(`${P.procesadas + 1}/${P.total} ${etiqueta} OK (${obtenerBienes(r.data).length} bien(es))`, 'debug');
       }
+    } else if (item.__directa && (r.noExiste || r.status === 404 || dijoNoExiste)) {
+      // La guía no existe: es una respuesta válida de SUNAT (número aún no emitido, guía física o de otro tipo)
+      reg.noExiste = true;
+      reg.error = 'La guía no existe en SUNAT (número aún no emitido, guía física o de otro tipo)';
+      P.noExisten = (P.noExisten || 0) + 1;
+      ctx.erroresSeguidos = 0;
+      const s0 = series.get(serieDe(item)) || { racha: 0, ultimo: 0, cerrada: false };
+      if (item.__posterior) {
+        s0.racha++;
+        s0.ultimo = Math.max(s0.ultimo, Number(item.numCpe));
+        if (!s0.cerrada && s0.racha >= cfg.maxNoExistenSerie) {
+          s0.cerrada = true;
+          log(`Serie ${item.numSerie}: ${s0.racha} números seguidos no existen; se omiten los siguientes de esa serie.`, 'ok');
+        }
+      }
+      series.set(serieDe(item), s0);
+      log(`Guía ${etiqueta}: no existe.`, 'debug');
+    } else {
+      reg.error = r.ok ? 'La respuesta no contiene el detalle de la guía' : r.mensaje;
+      if (r.ok) registrarError({ guia: etiqueta, clave, url, estadoHttp: r.status, mensaje: reg.error, intento: r.intentos, accion: 'OMITIDA' });
+      P.error++;
+      if (r.status !== 404) ctx.erroresSeguidos = (ctx.erroresSeguidos || 0) + 1;
+      // Error temporal de SUNAT (429, 5xx o red): se vuelve a intentar al final, con calma
+      if (!u.reintento && !r.ok && (ESTADOS_REINTENTABLES.has(r.status) || r.status === 0)) (ctx.fallidas || (ctx.fallidas = [])).push({ tipo: 'listado', u });
+      log(`Guía ${etiqueta}: ${reg.error}`, 'warn');
+    }
+    P.procesadas++;
+    actualizarUI();
+
+    if ((ctx.erroresSeguidos || 0) >= cfg.maxErroresConsecutivos) {
+      throw new ErrorDetencion(`Se detuvo tras ${ctx.erroresSeguidos} errores seguidos (posible problema de red o de SUNAT). Lo obtenido se conserva.`);
     }
   }
 
@@ -1807,6 +1919,8 @@
       log(`${comoDestinatario.length} búsqueda(s) por destinatario tienen bloques con más de 100 guías: no se pueden pedir por número (son guías de muchos emisores).`, 'warn');
     }
     const planes = tareas.filter((t) => t.rucEmisor).flatMap((t) => planesRelleno(t, cfg));
+    for (const pl of planes) { pl.peso = pesoSerie(cfg, pl.rucEmisor, pl.tipo, pl.serie); pl.tramo = pl.peso >= UMBRAL_TRAMO ? 'alto' : 'bajo'; }
+    planes.sort((a, b) => b.peso - a.peso);   // primero las series que más guías útiles dan (orden estable a igual peso)
     const estimadas = planes.filter((p) => p.modo === 'hueco').reduce((s, p) => s + (p.hasta - p.desde + 1), 0);
     const abiertos = planes.filter((p) => p.modo === 'adelante' || p.modo === 'atras').length;
     if (planes.length) {
@@ -1821,93 +1935,175 @@
     return planes;
   }
 
-  /** Pide por número las guías de un plan. Las que llegan a otro departamento (con filtro) no se guardan. */
+  /**
+   * Pide por número las guías de un plan, de a varias a la vez (con el ritmo frenado, de a una). Las que llegan a otro
+   * departamento (con filtro) no se guardan; los números que no existen quedan anotados para no volver a pedirlos.
+   */
   async function ejecutarRelleno(ctx, pl, fila) {
     const { cfg, signal } = ctx;
     const P = estado.progreso;
     const ini = pl.ventanas.reduce((m, v) => (v.ini < m ? v.ini : m), pl.ventanas[0].ini);
     const fin = pl.ventanas.reduce((m, v) => (v.fin > m ? v.fin : m), pl.ventanas[0].fin);
-    const conocidas = new Set(cfg.conocidas || []);
+    const conocidas = ctx.conocidas || (ctx.conocidas = new Set(cfg.conocidas || []));
     const origen = { etiqueta: `${pl.etiqueta} (por número)`, caso: '', grupo: 'relleno' };
     const paso = pl.modo === 'atras' ? -1 : 1;
-    let n = pl.desde, racha = 0, errores = 0;
-    while (n >= 1 && (pl.modo !== 'hueco' || n <= pl.hasta)) {
+    const dentro = (n) => n >= 1 && (pl.modo !== 'hueco' || n <= pl.hasta);
+    const fuera = (t) => t && ((pl.modo === 'adelante' && t > fin) || (pl.modo === 'atras' && t < ini));   // ya pasó el bloque
+    let n = pl.desde, racha = 0, errores = 0, cortar = false;
+    while (!cortar && dentro(n)) {
       if (signal.aborted) throw crearAbortError();
-      fila.siguiente = n;
-      const clave = claveGuia(pl.rucEmisor, pl.tipo, pl.serie, n);
-      const ya = estado.resultados.get(clave);
-      if (ya || conocidas.has(clave)) {
-        fila.yaConocidas++;
-        const t = ya ? (ya.momento || momentoDe(ya.detalle, ya.listado)) : '';
-        if (t && ((pl.modo === 'adelante' && t > fin) || (pl.modo === 'atras' && t < ini))) break;
+      // Tanda: los siguientes números por pedir (los ya conocidos se saltan sin consultar)
+      const k = ctx.ritmo && ctx.ritmo.factor >= 2 ? 1 : Math.max(1, cfg.simultaneas);
+      const tanda = [];
+      while (tanda.length < k && dentro(n) && !cortar) {
+        fila.siguiente = n;
+        const clave = claveGuia(pl.rucEmisor, pl.tipo, pl.serie, n);
+        const ya = estado.resultados.get(clave);
+        if (ya || conocidas.has(clave)) {
+          fila.yaConocidas++;
+          const t = ya ? (ya.momento || momentoDe(ya.detalle, ya.listado)) : '';
+          if (fuera(t)) { cortar = true; break; }
+          n += paso;
+          continue;
+        }
+        if (cfg.deptos.length && estado.fueraVistas.has(clave) && !(estado.previos.get(clave) || estado.memoria.get(clave))) {
+          // Ya abierta en esta sesión y llega a otro departamento: no se vuelve a pedir
+          const reg = crearRegistro(clave, null, { relleno: true, origen: 'memoria', procesada: true, http: 'REUTILIZADA' });
+          estado.resultados.set(clave, reg);
+          marcarFuera(reg, estado.fueraVistas.get(clave));
+          fila.fuera++;
+          n += paso;
+          continue;
+        }
+        tanda.push({ n, clave, pv: estado.previos.get(clave) || estado.memoria.get(clave) });
         n += paso;
-        continue;
       }
-      const pv = estado.previos.get(clave) || estado.memoria.get(clave);
-      let det = pv ? pv.detalle : null, http = pv ? 'REUTILIZADA' : '', intentos = 0, noExiste = false, mensaje = '';
-      if (!det && cfg.deptos.length && estado.fueraVistas.has(clave)) {
-        // Ya abierta en esta sesión y llega a otro departamento: no se vuelve a pedir
-        const reg = crearRegistro(clave, null, { relleno: true, origen: 'memoria', procesada: true, http: 'REUTILIZADA' });
-        estado.resultados.set(clave, reg);
-        marcarFuera(reg, estado.fueraVistas.get(clave));
-        fila.fuera++;
-        n += paso;
-        continue;
-      }
-      if (!det) {
-        await esperarTurno(ctx);
-        const item = { rucEmisor: pl.rucEmisor, codCpe: pl.tipo, numSerie: pl.serie, numCpe: String(n) };
-        const etiqueta = guiaLegible(pl.serie, n);
-        P.actual = etiqueta;
-        const r = await pedirJSON(construirUrlDetalle(item), ctx, etiqueta, clave, { directa: true });
-        fila.consultadas++; P.consultadas++; P.rellenoHechos++;
-        http = r.status; intentos = r.intentos;
-        const dijoNoExiste = r.ok && esObjetoPlano(r.data) && !pareceDetalle(r.data) && NO_EXISTE.test(JSON.stringify(r.data).slice(0, 2000));
-        if (r.ok && pareceDetalle(r.data)) det = r.data;
-        else if (r.noExiste || r.status === 404 || dijoNoExiste) noExiste = true;
-        else mensaje = r.ok ? 'La respuesta no contiene el detalle de la guía' : r.mensaje;
-      }
-      if (det) {
-        racha = 0; errores = 0;
-        const t = momentoDe(det, null);
-        const reg = crearRegistro(clave, null, {
-          relleno: true, procesada: true, http, intentos, momento: t,
-          origen: pv ? (estado.previos.has(clave) ? 'previo' : 'memoria') : 'relleno', consultadoEn: pv ? pv.consultadoEn : fechaHoraLocal()
-        });
-        estado.resultados.set(clave, reg);
-        if (!estado.origenes.has(clave)) estado.origenes.set(clave, []);
-        estado.origenes.get(clave).push(origen);
-        if (llegaAlDestino(cfg, det)) { Object.assign(reg, { ok: true, detalle: det }); fila.obtenidas++; P.ok++; P.relleno++; }
-        else { marcarFuera(reg, llegadaDe(det)); fila.fuera++; }
-        if (t && ((pl.modo === 'adelante' && t > fin) || (pl.modo === 'atras' && t < ini))) { n += paso; break; }
-      } else if (noExiste) {
-        fila.noExisten++;
-        racha++;
-        if (pl.modo !== 'hueco' && racha >= cfg.maxNoExistenSerie) { n += paso; break; }
-      } else {
-        fila.errores++; errores++;
-        registrarError({ guia: guiaLegible(pl.serie, n), clave, url: '', estadoHttp: http, mensaje, intento: intentos, accion: 'OMITIDA (pedida por número)' });
-        if (errores >= cfg.maxErroresConsecutivos) {
-          throw new ErrorDetencion(`Se detuvo tras ${errores} errores seguidos al pedir guías por número (posible problema de red o de SUNAT). Lo obtenido se conserva.`);
+      if (!tanda.length) continue;
+      // Se piden juntas; los resultados se miran en orden
+      const pedir = async (x) => {
+        if (x.pv) return { det: x.pv.detalle, http: 'REUTILIZADA', intentos: 0 };
+        P.rellenoHechos++;
+        return pedirNumero(ctx, pl, fila, x);
+      };
+      const resultados = tanda.length > 1 ? await Promise.all(tanda.map(pedir)) : [await pedir(tanda[0])];
+      for (let i = 0; i < tanda.length; i++) {
+        const x = tanda[i], r = resultados[i];
+        const res = anotarNumero(ctx, pl, fila, x, r, origen);
+        if (res.det) { racha = 0; errores = 0; if (fuera(res.t)) cortar = true; }
+        else if (r.noExiste) { racha++; if (pl.modo !== 'hueco' && racha >= cfg.maxNoExistenSerie) cortar = true; }
+        else {
+          errores++;
+          if (ESTADOS_REINTENTABLES.has(r.http) || r.http === 0) (ctx.fallidas || (ctx.fallidas = [])).push({ tipo: 'numero', pl, fila, x: { n: x.n, clave: x.clave } });
+          if (errores >= cfg.maxErroresConsecutivos) {
+            throw new ErrorDetencion(`Se detuvo tras ${errores} errores seguidos al pedir guías por número (posible problema de red o de SUNAT). Lo obtenido se conserva.`);
+          }
         }
       }
       actualizarUI();
-      n += paso;
     }
     fila.siguiente = n;
     fila.terminado = true;
   }
 
-  /** Fase 3: relleno por número de los bloques con más de 100 guías. */
-  async function rellenarTramos(ctx) {
-    const planes = planificarRelleno(ctx.cfg);
-    const filas = planes.map((p) => [p, nuevaFilaRelleno(p)]);
+  /** Pide a SUNAT un número de una serie: devuelve la guía, «no existe» o el error. */
+  async function pedirNumero(ctx, pl, fila, x) {
+    const P = estado.progreso;
+    await esperarTurno(ctx);
+    const item = { rucEmisor: pl.rucEmisor, codCpe: pl.tipo, numSerie: pl.serie, numCpe: String(x.n) };
+    const etiqueta = guiaLegible(pl.serie, x.n);
+    P.actual = etiqueta;
+    const r = await pedirJSON(construirUrlDetalle(item), ctx, etiqueta, x.clave, { directa: true });
+    fila.consultadas++; P.consultadas++;
+    const dijoNoExiste = r.ok && esObjetoPlano(r.data) && !pareceDetalle(r.data) && NO_EXISTE.test(JSON.stringify(r.data).slice(0, 2000));
+    if (r.ok && pareceDetalle(r.data)) return { det: r.data, http: r.status, intentos: r.intentos };
+    if (r.noExiste || r.status === 404 || dijoNoExiste) return { noExiste: true, http: r.status, intentos: r.intentos };
+    return { mensaje: r.ok ? 'La respuesta no contiene el detalle de la guía' : r.mensaje, http: r.status, intentos: r.intentos };
+  }
+
+  /** Anota el resultado de un número pedido en un bloque grande: guía (guardada o de otro departamento), «no existe» o error. */
+  function anotarNumero(ctx, pl, fila, x, r, origen) {
+    const { cfg } = ctx;
+    const P = estado.progreso;
+    if (r.det) {
+      const t = momentoDe(r.det, null);
+      const reg = crearRegistro(x.clave, null, {
+        relleno: true, procesada: true, http: r.http, intentos: r.intentos, momento: t,
+        origen: x.pv ? (estado.previos.has(x.clave) ? 'previo' : 'memoria') : 'relleno', consultadoEn: x.pv ? x.pv.consultadoEn : fechaHoraLocal()
+      });
+      estado.resultados.set(x.clave, reg);
+      if (!estado.origenes.has(x.clave)) estado.origenes.set(x.clave, []);
+      estado.origenes.get(x.clave).push(origen);
+      if (llegaAlDestino(cfg, r.det)) { Object.assign(reg, { ok: true, detalle: r.det }); fila.obtenidas++; P.ok++; P.relleno++; }
+      else { marcarFuera(reg, llegadaDe(r.det)); fila.fuera++; }
+      return { det: true, t };
+    }
+    if (r.noExiste) {
+      fila.noExisten++;
+      P.noExisten = (P.noExisten || 0) + 1;
+      // Queda anotado (la página lo recuerda y la próxima lista no lo vuelve a pedir)
+      estado.resultados.set(x.clave, crearRegistro(x.clave, null, {
+        relleno: true, procesada: true, noExiste: true, http: r.http, intentos: r.intentos, consultadoEn: fechaHoraLocal(),
+        error: 'La guía no existe en SUNAT (número aún no emitido, guía física o de otro tipo)'
+      }));
+      return {};
+    }
+    fila.errores++;
+    registrarError({ guia: guiaLegible(pl.serie, x.n), clave: x.clave, url: '', estadoHttp: r.http, mensaje: r.mensaje, intento: r.intentos, accion: 'OMITIDA (pedida por número)' });
+    return {};
+  }
+
+  /** Segunda vuelta: las guías y los números que fallaron por errores temporales de SUNAT se piden otra vez, de a una. */
+  async function reintentarFallidas(ctx) {
+    const lista = (ctx.fallidas || []).splice(0);
+    if (!lista.length) return;
+    const P = estado.progreso;
+    log(`Se reintentan ${lista.length} guía(s) que fallaron por errores temporales de SUNAT…`);
+    let recuperadas = 0;
+    for (const f of lista) {
+      if (ctx.signal.aborted) throw crearAbortError();
+      let ok = false, guia = '', clave = '';
+      if (f.tipo === 'listado') {
+        const reg = estado.resultados.get(f.u.clave);
+        if (!reg || reg.ok || reg.fueraDestino) continue;
+        Object.assign(reg, { procesada: false, error: '' });
+        P.error--; P.procesadas--;   // abrirGuia los vuelve a contar
+        f.u.reintento = true;
+        await abrirGuia(ctx, f.u, ctx.seriesDirectas || new Map());
+        ok = !!(reg.ok || reg.fueraDestino || reg.noExiste);
+        guia = guiaLegible(f.u.item.numSerie, f.u.item.numCpe); clave = f.u.clave;
+      } else {
+        // Número de un bloque grande
+        if (estado.resultados.has(f.x.clave)) continue;
+        const r = await pedirNumero(ctx, f.pl, f.fila, f.x);
+        f.fila.errores--;   // anotarNumero lo vuelve a contar si falla otra vez
+        anotarNumero(ctx, f.pl, f.fila, f.x, r, { etiqueta: `${f.pl.etiqueta} (por número)`, caso: '', grupo: 'relleno' });
+        ok = !!(r.det || r.noExiste);
+        guia = guiaLegible(f.pl.serie, f.x.n); clave = f.x.clave;
+      }
+      if (ok) {
+        recuperadas++;
+        estado.entregados.delete(clave);   // si ya se había entregado como error, la próxima parte lleva lo obtenido
+        registrarError({ guia, clave, url: '', estadoHttp: '', mensaje: 'Se obtuvo en la segunda vuelta', intento: '', accion: 'RECUPERADA' });
+      }
+      actualizarUI();
+    }
+    log(`Segunda vuelta: ${recuperadas} de ${lista.length} recuperada(s).`, recuperadas === lista.length ? 'ok' : 'warn');
+  }
+
+  /** Fase 3: relleno por número de los bloques con más de 100 guías (por tramo: primero las series que más rinden). */
+  async function rellenarTramos(ctx, tramo = 'todo') {
+    if (!estado.planesRelleno) {
+      const planes = planificarRelleno(ctx.cfg);
+      estado.planesRelleno = planes.map((p) => [p, nuevaFilaRelleno(p)]);
+    }
+    const filas = estado.planesRelleno.filter(([p]) => tramo === 'todo' || p.tramo === tramo);
     for (const [p, fila] of filas) {
+      if (fila.terminado) continue;
       if (p.modo === 'omitido' || p.modo === 'sin_series') { fila.terminado = true; continue; }
       await ejecutarRelleno(ctx, p, fila);
     }
     const ok = filas.reduce((s, [, f]) => s + f.obtenidas, 0), fuera = filas.reduce((s, [, f]) => s + f.fuera, 0);
-    if (filas.length) log(`Guías pedidas por número: ${ok} guardada(s)${fuera ? `, ${fuera} llegan a otro departamento` : ''}.`, 'ok');
+    if (filas.length) log(`Guías pedidas por número${tramo === 'bajo' ? ' (series que rinden poco)' : ''}: ${ok} guardada(s)${fuera ? `, ${fuera} llegan a otro departamento` : ''}.`, 'ok');
   }
 
   /** Números que quedaron sin pedir (tope de tiempo o detención). */
@@ -1943,6 +2139,13 @@
     estado.mensajesExceso = new Set();
     estado.encontradas = new Map();
     estado.relleno = [];
+    estado.planesRelleno = null;
+    estado.abrirSiempre = new Set();
+    estado.entregados = new Set();
+    estado.entregas = 0;
+    estado.hechasEntregadas = 0;
+    estado.entregaFallida = false;
+    estado.ultimaEntrega = Date.now();
     estado.tokenExp = null;
     estado.controller = new AbortController();
   }
@@ -1960,7 +2163,7 @@
     }
     estado.ejecutando = true;
     let iniciado = false;
-    const ctx = { token: null, tokenExp: null, cabecerasExtra: {}, signal: null, cfg: null, solicitudes: 0 };
+    const ctx = { token: null, tokenExp: null, cabecerasExtra: {}, signal: null, cfg: null, solicitudes: 0, ritmo: { factor: 1, exitos: 0 }, erroresSeguidos: 0 };
 
     try {
       const cfg = normalizarConfig(opciones);
@@ -2027,16 +2230,19 @@
         estado.motivoFin = 'SOLO_LISTA';
         log('Solo lista: no se abrió ninguna guía.', 'ok');
       } else {
-        // Fase 2: detalle de cada guía (las de la lista de prioridad primero)
-        estado.fase = 'detalle';
-        actualizarUI();
-        await obtenerDetalles(ctx);
-        // Fase 3: bloques con más de 100 guías, por número
-        if (cfg.rellenar) {
-          estado.fase = 'relleno';
+        // Fases 2 y 3: el detalle de cada guía del listado y, en los bloques de más de 100 guías, por número.
+        // Primero lo que más rinde (lista de prioridad y series que suelen servir); al final, las series que casi nunca sirven.
+        for (const tramo of ['alto', 'bajo']) {
+          estado.fase = 'detalle';
           actualizarUI();
-          await rellenarTramos(ctx);
+          await obtenerDetalles(ctx, tramo);
+          if (cfg.rellenar) {
+            estado.fase = 'relleno';
+            actualizarUI();
+            await rellenarTramos(ctx, tramo);
+          }
         }
+        await reintentarFallidas(ctx);
         estado.motivoFin = 'COMPLETADO';
         log('Extracción completada.', 'ok');
       }
@@ -2063,12 +2269,18 @@
         console.error(e);
       }
     } finally {
+      // Con la extensión, la conexión vigente se guarda (en memoria) para la búsqueda siguiente; sin ella, se descarta
+      const tokenVigente = MODO_EXTENSION && ctx.token && !tokenPorVencer(ctx) ? { token: ctx.token, cab: ctx.cabecerasExtra } : null;
       // Descartar la conexión (token y cabeceras) y dejar la página como estaba
       ctx.token = null;
       ctx.tokenExp = null;
       ctx.cabecerasExtra = null;
       detenerCaptura('fin');
       if (iniciado) { tokenCapturado = null; cabecerasCapturadas = null; }
+      if (MODO_EXTENSION) {
+        if (tokenVigente && !tokenCapturado) { tokenCapturado = tokenVigente.token; cabecerasCapturadas = tokenVigente.cab ? { ...tokenVigente.cab } : null; }
+        iniciarCaptura('fondo');
+      }
       estado.tokenExp = null;
       estado.ejecutando = false;
       estado.pausado = false;
@@ -2084,7 +2296,9 @@
         }
         try { finalizar(); } catch (e) { log(`Error al preparar el resumen: ${e.message}`, 'error'); }
         const hayDatos = estado.resultados.size > 0;
-        if (estado.motivoFin !== 'CANCELADO' && hayDatos) {
+        if (estado.config && estado.config.alEntregar) entregarParcial(true);
+        const conEntregas = estado.config && estado.config.alEntregar && !estado.entregaFallida;
+        if (estado.motivoFin !== 'CANCELADO' && hayDatos && !conEntregas) {
           if (estado.config.descargarJSON) { try { await descargar('json'); } catch (e) { log(`No se pudo descargar el JSON: ${e.message}`, 'error'); } }
           if (estado.config.descargarExcel) {
             if (estado.config.descargarJSON) await dormir(500);
@@ -2646,9 +2860,36 @@
    * JSON para el tablero: una entrada por guía con su fila del listado (estado actual), su detalle
    * completo (si se descargó) y las búsquedas o casos que la encontraron. Nunca incluye el token.
    */
-  function construirJSON() {
+  /*
+   * Entregas por partes (con la extensión): cada minuto, o cada 150 guías, lo terminado desde la entrega anterior va a la
+   * página en el mismo formato del JSON; la página lo guarda al instante. La última entrega lleva el estado final y el resumen.
+   */
+  const ENTREGA_CADA_MS = 60000, ENTREGA_CADA_GUIAS = 150;
+  const terminado = (r) => r.procesada || r.fueraDestino || r.ok || r.noExiste || r.soloListado || r.origen === 'conocida';
+  function entregarSiToca() {
     const cfg = estado.config;
-    const guias = [...estado.resultados.values()].map((r) => (r.fueraDestino ? {
+    if (!cfg || !cfg.alEntregar) return;
+    const P = estado.progreso, hechas = (P.procesadas || 0) + (P.rellenoHechos || 0);
+    if (Date.now() - estado.ultimaEntrega < ENTREGA_CADA_MS && hechas - (estado.hechasEntregadas || 0) < ENTREGA_CADA_GUIAS) return;
+    estado.hechasEntregadas = hechas;
+    entregarParcial(false);
+  }
+  function entregarParcial(final) {
+    const cfg = estado.config;
+    if (!cfg || !cfg.alEntregar) return;
+    const regs = [...estado.resultados.values()].filter((r) => terminado(r) && !estado.entregados.has(r.clave));
+    estado.ultimaEntrega = Date.now();
+    if (!regs.length && !final) return;
+    for (const r of regs) estado.entregados.add(r.clave);
+    estado.entregas++;
+    try { cfg.alEntregar(construirJSON(regs, final)); }
+    catch (e) { estado.entregaFallida = true; log(`No se pudo entregar una parte a la página (${e.message}): al terminar se descargará el JSON.`, 'warn'); }
+  }
+
+  function construirJSON(soloEstos, final) {
+    const cfg = estado.config;
+    const parcial = Array.isArray(soloEstos);
+    const guias = (parcial ? soloEstos : [...estado.resultados.values()]).map((r) => (r.fueraDestino ? {
       // Abierta y llega a otro departamento: solo la clave (para no volver a abrirla) y el ubigeo de llegada
       clave: r.clave, estado: 'fuera_de_destino', llegada: r.llegada || '', fecha: r.momento || momentoDe(null, r.listado),
       busquedas: estado.origenes.get(r.clave) || [], origen: r.origen
@@ -2669,7 +2910,8 @@
       formato: 'GRE_EXTRACTOR_JSON',
       version: VERSION,
       generadoEn: fechaHoraLocal(),
-      estadoFinal: estado.motivoFin,
+      estadoFinal: parcial && !final ? 'EN_CURSO' : estado.motivoFin,
+      ...(parcial ? { parte: estado.entregas, final: !!final, inicio: fechaHoraLocal(new Date(estado.tiempos.inicio)) } : {}),
       pedido: cfg ? cfg.pedidoInfo : null,
       parametros: parametrosExportables(cfg),
       busquedas: estado.busquedas,
@@ -3473,6 +3715,7 @@
     ['codEstado', 'Código estado', 'text'], ['codSubEstado', 'Código subestado', 'text'],
     ['topeMin', 'Tope de tiempo (minutos; 0 = sin tope)', 'number'], ['deptoLlegada', 'Guardar solo las que llegan a (ej.: San Martín)', 'text'],
     ['pausaMinMs', 'Pausa mínima (ms)', 'number'], ['pausaMaxMs', 'Pausa máxima (ms)', 'number'],
+    ['simultaneas', 'Consultas a la vez (1 a 4)', 'number'],
     ['maxReintentos', 'Reintentos', 'number'], ['timeoutMs', 'Tiempo máx. por solicitud (ms)', 'number']
   ];
   const ETIQUETAS_ROL = { ambos: 'Emisor y receptor', receptor: 'Receptor (destinatario)', emisor: 'Emisor (remitente)' };
@@ -3888,9 +4131,14 @@
     detallesCorrectos() { return [...estado.resultados.values()].filter((r) => r.ok).map((r) => r.detalle); }
   };
 
-  crearPanel();
-  log(`Extractor de GRE v${VERSION} listo.`, 'ok');
-  if (origenActual !== ORIGEN_CORRECTO) {
-    log('Aviso: este no parece el contexto «iframeApplication» (intranet.sunat.peru). Cámbielo en el selector de contexto de la consola.', 'warn');
+  if (MODO_EXTENSION) {
+    // Solo guarda (en memoria) la conexión que usa la propia pantalla para consultar guías; el panel aparece al buscar
+    iniciarCaptura('fondo');
+  } else {
+    crearPanel();
+    log(`Extractor de GRE v${VERSION} listo.`, 'ok');
+    if (origenActual !== ORIGEN_CORRECTO) {
+      log('Aviso: este no parece el contexto «iframeApplication» (intranet.sunat.peru). Cámbielo en el selector de contexto de la consola.', 'warn');
+    }
   }
 })();

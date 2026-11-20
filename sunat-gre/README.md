@@ -2,7 +2,7 @@
 
 Script para la consola de Microsoft Edge que descarga, dentro de su propia sesión de SUNAT, las guías de remisión (remitente, transportista y por eventos) y su detalle: bienes, peso, fechas, punto de partida (agencia), llegada, transportista, vehículo y conductor. Funciona junto con el sitio **Gestión de Riesgo · IA Tarapoto** (https://ia-tarapotodev.github.io/analisis-maquinaria/): cada módulo (Envíos y Maquinaria) arma su lista del día y el extractor la ejecuta.
 
-- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.4.0).
+- Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.5.0).
 - Usa solo la consulta autorizada de la pantalla de guías de SUNAT, con la sesión de quien lo ejecuta. No evade controles ni guarda la conexión.
 
 ## Dónde se ejecuta
@@ -27,6 +27,15 @@ Para no pegarlo cada día, guárdelo una sola vez como *Snippet*: **Sources > Sn
 **Si la descarga se corta** (tope de tiempo o sesión de SUNAT vencida): cargue el JSON en la página que armó la lista, vuelva a copiar la lista del día y péguela en el extractor (después de volver a entrar a SUNAT). La lista nueva lleva todo lo ya descargado («ya en el tablero» y anclas): solo se pide lo que falta. «Más opciones > Cargar resultado anterior» solo sirve para listas que no llevan las guías conocidas.
 
 **Ventana fija** (desde la versión 3.4.0): la lista del día de la página de envíos busca **de ayer 08:00 a hoy 08:00, nada más**. Como la ventana no cambia durante el día, volver a correr la lista no trae guías nuevas: solo completa lo que faltó, y termina.
+
+## Velocidad (desde la versión 3.5.0)
+
+- **Dos consultas a la vez** y pausas más cortas (de 0,25 a 0,4 segundos): la misma lista termina en algo más de la mitad del tiempo.
+- **Se frena solo**: si SUNAT responde con saturación (errores 429 o 5xx), se corta la conexión o tarda más de 4 segundos, el extractor duplica las pausas (hasta 4 veces) y pasa a una consulta a la vez; tras 40 respuestas buenas seguidas vuelve al ritmo normal.
+- **Segunda vuelta**: las guías que fallaron por saturación se vuelven a pedir al final, de a una. En la hoja Errores quedan como «RECUPERADA».
+- **Primero lo que más rinde**: si la lista trae cuántas guías de cada serie llegan a la jurisdicción (la página lo calcula con las descargas anteriores), primero se abren las series que más rinden y al final las demás. **No se salta ninguna serie**: solo cambia el orden, así que si la búsqueda se corta, lo que falta es lo de menor rendimiento.
+- **Números que no existen**: al pedir por número, los que SUNAT dice que no existen quedan anotados en el JSON (`no_existe`); la página los recuerda y no los vuelve a pedir.
+- **Solo ciertos emisores**: una búsqueda por destinatario puede pedir que se abran solo las guías de ciertos emisores (por ejemplo, importadores y transportistas de maquinaria); las demás quedan solo listadas (`solo_listado`), sin gastar una consulta por cada una.
 
 ## Casos
 
