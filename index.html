@@ -607,6 +607,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   .mapa-lado .tabs-chicas { align-self: flex-start; }
   .aviso-paquete { border-color: var(--ambar); background: var(--ambar-suave); }
   .aviso-paquete h3 { color: var(--ambar); }
+  /* Búsqueda en SUNAT con la extensión: recuadro de avance (abajo a la derecha) */
+  .corrida { position: fixed; right: 16px; bottom: 16px; z-index: 1500; width: min(380px, calc(100vw - 32px)); padding: 12px 14px; display: grid; gap: 4px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .18); border-color: var(--acento); }
+  .corrida[hidden] { display: none; }
+  .flotante.visible ~ .corrida { bottom: 104px; }
+  .corrida-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .corrida-cuerpo { display: grid; gap: 2px; }
+  .corrida-aviso { color: var(--ambar); }
+  .corrida .fila-botones { justify-content: flex-end; margin-top: 4px; }
+  .mal-txt { color: var(--rojo); font-weight: 600; }
+  .punto-sunat { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--mudo); vertical-align: middle; }
+  .punto-sunat[data-listo="si"] { background: #3ddc97; box-shadow: 0 0 0 2px rgba(61, 220, 151, .3); }
+  @media (max-width: 560px) { .corrida { right: 8px; left: 8px; width: auto; bottom: 8px; } }
 
 </style>
 </head>
@@ -4550,12 +4563,14 @@ var qrcode = function() {
   }
 
   /* ---------- Guardar el resultado del extractor ---------- */
-  /** Lee un JSON del extractor y guarda en la base las guías nuevas (o más completas) de la jurisdicción. */
-  async function guardarDescarga(nombre, d) {
+  function validarResultado(d) {
     if (d && d.tipo === 'GRE_PEDIDO') throw new Error('es una lista para el extractor, no un resultado');
     if (!d || d.formato !== 'GRE_EXTRACTOR_JSON' || !Array.isArray(d.guias)) throw new Error('no es un resultado del extractor de guías');
+  }
+  /** Lee un JSON del extractor (completo o una parte): sus guías, las de otros destinos y lo nuevo para la base. No guarda nada. */
+  function prepararDescarga(nombre, d) {
+    validarResultado(d);
     const generado = limpio(d.generadoEn);
-    if (app.descargas.some((x) => x.resumen.generado === generado && x.resumen.archivo === nombre)) return { repetido: true };
     const todas = d.guias.map(guiaDe).filter(Boolean);
     // Último número de cada serie por día (también de otros destinos): sirve para pedir por número al día siguiente
     const series = {};
@@ -4584,20 +4599,68 @@ var qrcode = function() {
       pendientes: Number(R['Números que quedaron por pedir'] || 0), tiempo: limpio(R['Tiempo total']), porEmpresa,
       desde: todas.map((g) => g.fecha).filter(Boolean).sort()[0] || '', hasta: todas.map((g) => g.fecha).filter(Boolean).sort().pop() || ''
     };
+    return { generado, todas, series, fuera, propias, nuevas, resumen };
+  }
+  /** Lo recién guardado pasa a la memoria de la página (guías, otros destinos y la lista de descargas). */
+  function integrarDescarga(fila, p) {
+    for (const g of p.nuevas) { g.descarga = fila.id; g.generado = p.generado; g.primera = p.generado; fusionar(g); }
+    for (const g of p.propias) { const q = app.guias.get(g.clave); if (q && !q.primera) q.primera = p.generado; }
+    app.control.push(...p.fuera);
+    quitarSinAbrirDeOtroDestino(p.fuera.map(([k]) => k));
+    const i = app.descargas.findIndex((x) => x.id === fila.id);
+    if (i >= 0) app.descargas[i] = fila; else app.descargas.unshift(fila);
+  }
+  /** Lee un JSON del extractor y guarda en la base las guías nuevas (o más completas) de la jurisdicción. */
+  async function guardarDescarga(nombre, d) {
+    validarResultado(d);
+    const generado = limpio(d.generadoEn);
+    if (app.descargas.some((x) => x.resumen.generado === generado && x.resumen.archivo === nombre)) return { repetido: true };
+    const p = prepararDescarga(nombre, d);
     const id = nuevoId(), dia = generado.slice(0, 10) || isoDia(new Date());
     let creado = new Date().toISOString();
     if (app.modo === 'nube') {
-      const datos = await cifrar({ v: 1, resumen, series, guias: nuevas.map(compactar) }, 'descargas');
-      const control = fuera.length ? await cifrar({ fuera }, 'control') : null;
+      const datos = await cifrar({ v: 1, resumen: p.resumen, series: p.series, guias: p.nuevas.map(compactar) }, 'descargas');
+      const control = p.fuera.length ? await cifrar({ fuera: p.fuera }, 'control') : null;
       const [fila] = await agregarFilas('descargas', [{ id, dia, datos, control, modulo: 'envios', tipo: 'gre' }], 'id,creado');
       if (fila && fila.creado) creado = fila.creado;
     }
-    for (const g of nuevas) { g.descarga = id; g.generado = generado; g.primera = generado; fusionar(g); }
-    for (const g of propias) { const p = app.guias.get(g.clave); if (p && !p.primera) p.primera = generado; }
-    app.control.push(...fuera);
-    quitarSinAbrirDeOtroDestino(fuera.map(([k]) => k));
-    app.descargas.unshift({ id, dia, creado, resumen, series });
-    return { resumen };
+    integrarDescarga({ id, dia, creado, resumen: p.resumen, series: p.series }, p);
+    return { resumen: p.resumen };
+  }
+  /**
+   * Una parte de una búsqueda hecha con la extensión: se suma a lo ya recibido y la descarga de esa búsqueda (una sola fila)
+   * se vuelve a guardar completa, cifrada. Si la base falla, nada cambia y la extensión vuelve a enviar la parte.
+   */
+  async function guardarParte(c, d) {
+    const p = prepararDescarga(c.nombre, d);
+    const A0 = c.acum || { guias: new Map(), fuera: new Map(), series: {}, total: 0, propias: 0, sinAbrir: 0, porEmpresa: {}, desde: '', hasta: '' };
+    const A = { ...A0, guias: new Map(A0.guias), fuera: new Map(A0.fuera), series: JSON.parse(JSON.stringify(A0.series)), porEmpresa: JSON.parse(JSON.stringify(A0.porEmpresa)) };
+    for (const g of p.nuevas) A.guias.set(g.clave, g);
+    for (const f of p.fuera) A.fuera.set(f[0], f);
+    for (const [k, porDia] of Object.entries(p.series)) {
+      const s = A.series[k] = A.series[k] || {};
+      for (const [dia, n] of Object.entries(porDia)) s[dia] = Math.max(s[dia] || 0, n);
+    }
+    A.total += p.resumen.total; A.propias += p.resumen.propias; A.sinAbrir += p.resumen.sinAbrir;
+    for (const [ruc, x] of Object.entries(p.resumen.porEmpresa)) { const y = A.porEmpresa[ruc] = A.porEmpresa[ruc] || [0, 0, 0]; for (let i = 0; i < 3; i++) y[i] += x[i]; }
+    if (p.resumen.desde && (!A.desde || p.resumen.desde < A.desde)) A.desde = p.resumen.desde;
+    if (p.resumen.hasta && p.resumen.hasta > A.hasta) A.hasta = p.resumen.hasta;
+    const resumen = { ...p.resumen, archivo: c.nombre, total: A.total, propias: A.propias, nuevas: A.guias.size, fuera: A.fuera.size, sinAbrir: A.sinAbrir,
+      porEmpresa: A.porEmpresa, desde: A.desde, hasta: A.hasta, partes: Number(d.parte) || 0, extension: true };
+    const dia = c.dia || (p.generado.slice(0, 10) || isoDia(new Date()));
+    const id = c.filaId || nuevoId();
+    let creado = c.creado || new Date().toISOString();
+    if (app.modo === 'nube') {
+      const datos = await cifrar({ v: 1, resumen, series: A.series, guias: [...A.guias.values()].map(compactar) }, 'descargas');
+      const control = A.fuera.size ? await cifrar({ fuera: [...A.fuera.values()] }, 'control') : null;
+      if (!c.filaId) {
+        const [fila] = await agregarFilas('descargas', [{ id, dia, datos, control, modulo: 'envios', tipo: 'gre' }], 'id,creado');
+        if (fila && fila.creado) creado = fila.creado;
+      } else await cambiarFilas('descargas', `id=eq.${id}`, { datos, control });
+    }
+    Object.assign(c, { acum: A, filaId: id, dia, creado });
+    integrarDescarga({ id, dia, creado, resumen, series: A.series }, p);
+    return { resumen, nuevas: p.nuevas.length };
   }
 
   /* ---------- Respaldo ---------- */
@@ -4629,6 +4692,33 @@ var qrcode = function() {
   /** ¿Ya hay una descarga completa que cubre la ventana de hoy? */
   const ventanaCompleta = (V = ventanaLista(1)) => app.descargas.some((d) => d.resumen.estadoFinal === 'COMPLETADO' && d.resumen.ventana
     && d.resumen.ventana.desde <= V.desde && d.resumen.ventana.hasta >= V.hasta);
+  /**
+   * Rendimiento de cada serie de guías (cada agencia tiene la suya) en las últimas 2 semanas: de sus guías abiertas, qué parte
+   * llegó a la jurisdicción. Se suaviza (una a favor y una en contra) para que una serie con pocas guías no quede en 0 ni en 1.
+   * El extractor abre primero las series que más rinden y al final las de menos de 15 %: no se salta ninguna.
+   */
+  const UMBRAL_SERIE = 0.15;   // el mismo del extractor
+  function rendimientoSeries(rucs) {
+    const desde = isoMomento(diasAtras(CONFIG.controlDias));
+    const cuenta = new Map();
+    const sumar = (ruc, cod, serie, i) => {
+      if (!rucs.has(ruc) || !/^[A-Z0-9]{4}$/.test(serie || '')) return;
+      const k = `${ruc}|${cod}|${serie}`, c = cuenta.get(k) || [0, 0];
+      c[i]++;
+      cuenta.set(k, c);
+    };
+    for (const g of app.guias.values()) if (g.abierta && !g.fuera && (g.fecha || '') >= desde) sumar(g.emisorRuc, g.cod, g.serie, 0);
+    const vistas = new Set();
+    for (const [clave, fecha] of app.control) {
+      if ((fecha || '') < desde || vistas.has(clave) || app.guias.has(clave)) continue;
+      vistas.add(clave);
+      const [ruc, cod, serie] = clave.split('-');
+      sumar(ruc, cod, serie, 1);
+    }
+    const out = {};
+    for (const [k, [si, no]] of cuenta) out[k] = Math.round(((si + 1) / (si + no + 2)) * 1000) / 1000;
+    return out;
+  }
   function armarPedido(diagnostico) {
     const hoy = new Date();
     const V = ventanaLista();
@@ -4675,7 +4765,10 @@ var qrcode = function() {
     }
     pedido.conocidas = [...conocidas];
     pedido.anclas = [...anclas.values()];
-    return { pedido, conocidas: pedido.conocidas.length, anclas: pedido.anclas.length, prioridad: pedido.prioridad.length, ventana: V };
+    pedido.prioridadSeries = rendimientoSeries(rucs);
+    const pesos = Object.values(pedido.prioridadSeries);
+    return { pedido, conocidas: pedido.conocidas.length, anclas: pedido.anclas.length, prioridad: pedido.prioridad.length, ventana: V,
+      seriesAltas: pesos.filter((v) => v >= UMBRAL_SERIE).length, seriesBajas: pesos.filter((v) => v < UMBRAL_SERIE).length };
   }
   async function accionPedido(diagnostico, guardar) {
     const r = armarPedido(diagnostico);
@@ -4687,7 +4780,8 @@ var qrcode = function() {
       return;
     }
     const ok = await copiar(texto);
-    avisar(ok ? 'Lista copiada. Péguela en el extractor («Lista del tablero») y pulse «Buscar y descargar».' : 'No se pudo copiar: use «Guardar como archivo».', ok ? 'bien' : 'mal');
+    const orden = !diagnostico && r.seriesBajas ? ` Las ${r.seriesBajas} series que casi no traen guías a la jurisdicción se abren al final.` : '';
+    avisar(ok ? `Lista copiada. Péguela en el extractor («Lista del tablero») y pulse «Buscar y descargar».${orden}` : 'No se pudo copiar: use «Guardar como archivo».', ok ? 'bien' : 'mal');
   }
 
   /* ---------- Actas de intervención (hoja «Consolidado» del Excel de principales infractores) ---------- */
@@ -6287,7 +6381,7 @@ var qrcode = function() {
     const ultima = app.descargas[0];
     if (ultima) {
       const r = ultima.resumen;
-      if (descargaAMedias(r)) avisos.push(`La última descarga quedó a medias (${r.estadoFinal === 'TOPE' ? 'llegó al tope de tiempo' : 'se detuvo antes de terminar'}${r.pendientes ? `; quedaron ${plural(r.pendientes, 'número', 'números')} por pedir` : ''}). Para completarla: pulse «1 Copiar lista del día» otra vez y péguela en el extractor. La lista ya lleva todo lo descargado: no se vuelve a pedir.`);
+      if (descargaAMedias(r) && !corridaActiva()) avisos.push(`La última descarga quedó a medias (${r.estadoFinal === 'TOPE' ? 'llegó al tope de tiempo' : 'se detuvo antes de terminar'}${r.pendientes ? `; quedaron ${plural(r.pendientes, 'número', 'números')} por pedir` : ''}). Para completarla: ${EXT.lista ? 'pulse «Buscar en SUNAT» otra vez' : 'pulse «1 Copiar lista del día» otra vez y péguela en el extractor'}. La lista ya lleva todo lo descargado: no se vuelve a pedir.`);
       else if (r.estadoFinal === 'SOLO_LISTA') avisos.push('La última carga es un diagnóstico (solo lista): sus guías no se abrieron.');
       if (r.version && r.version < '3.4') avisos.push(`Actualice el extractor a la versión 3.4.0 (la última descarga es de la ${r.version}): la lista del día ahora busca de 08:00 a 08:00 y las versiones anteriores no la entienden.`);
       if (r.lista && /San Martín/.test(r.lista)) avisos.push('La última descarga usó una lista antigua («Envíos a San Martín»): copie la lista del día desde esta página (recárguela con Ctrl+F5 si hace falta).');
@@ -6343,6 +6437,7 @@ var qrcode = function() {
       dias.push(el('div', { class: `dia-cal ${clase}`, title: x ? `${fechaCorta(dia)}: ${plural(x.n, 'descarga', 'descargas')}, ${plural(x.nuevas, 'guía nueva', 'guías nuevas')}` : `${fechaCorta(dia)}: sin descarga` },
         el('span', { text: dia.slice(8, 10) }), x ? el('b', { text: String(x.nuevas) }) : null));
     }
+    caja.append(tarjetaExtension());
     caja.append(el('div', { class: 'tarjeta' }, el('h3', { text: 'Últimos 35 días' }),
       el('div', { class: 'calendario' }, ...dias),
       el('p', { class: 'chico leyenda-cal' }, el('span', { class: 'dia-cal ok mini' }), ' completa ', el('span', { class: 'dia-cal tope mini' }), ' llegó al tope de tiempo ',
@@ -6370,6 +6465,247 @@ var qrcode = function() {
     return caja;
   }
 
+  /* ---------- Extensión de Edge «Gestión de Riesgo · SUNAT»: buscar en SUNAT desde la página ---------- */
+  // La extensión corre el extractor en la pestaña de SUNAT (con la sesión de quien la usa) y devuelve lo obtenido por partes.
+  // Cada parte se guarda al instante, cifrada, en una sola descarga por búsqueda que se completa con cada parte. La página no
+  // ve ni guarda la conexión de SUNAT: solo recibe las guías. Sin la extensión, todo sigue igual (copiar la lista y cargar el JSON).
+  const EXT = { lista: false, version: '', sunat: { abierto: false, conexion: false, ejecutando: false }, corrida: null, cola: Promise.resolve() };
+  const NOMBRE_MODULO = { envios: 'Envíos', maquinaria: 'Maquinaria' };
+  const FASES_EXT = { conexion: 'Esperando la conexión de SUNAT', busqueda: 'Buscando las guías', detalle: 'Abriendo las guías', relleno: 'Pidiendo guías por su número' };
+  const ENTREGA_EXT = { entregaCadaMs: 120000, entregaCadaGuias: 500 };   // cada parte: a los 2 minutos o a las 500 guías (las pruebas lo achican con app.entregaExt)
+  const aExtension = (m) => window.postMessage({ ...m, __gre: 'gre-pagina' }, location.origin);
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window || ev.origin !== location.origin || !ev.data || ev.data.__gre !== 'gre-extension') return;
+    try { recibirExtension(ev.data); } catch (e) { console.error('[Gestión de Riesgo] extensión:', e); }
+  });
+  aExtension({ tipo: 'hola' });
+
+  const nuevaCorrida = (id, modulo) => ({ id: String(id), modulo, inicio: Date.now(), nombre: `Búsqueda en SUNAT del ${fechaHora(new Date())}`,
+    partes: new Set(), enProceso: new Set(), progreso: null, conexion: true, fin: null, error: '', iniciada: false, cerrada: false, guardado: null });
+  const corridaActiva = () => !!(EXT.corrida && !EXT.corrida.cerrada && !(EXT.corrida.fin && EXT.corrida.finalGuardada));
+
+  function recibirExtension(m) {
+    const c = EXT.corrida;
+    if (corridaActiva()) app.ultimaActividad = Date.now();   // mientras llega una búsqueda, la página no se cierra sola
+    switch (m.tipo) {
+      case 'hola':
+        if (!EXT.lista || EXT.version !== m.version) { EXT.lista = true; EXT.version = String(m.version || ''); pintarAcciones(); }
+        break;
+      case 'adios':
+        EXT.lista = false;
+        pintarAcciones();
+        break;
+      case 'sunat':
+        EXT.sunat = { abierto: !!m.abierto, conexion: !!m.conexion, ejecutando: !!m.ejecutando };
+        if (!EXT.lista) EXT.lista = true;
+        pintarAcciones();
+        break;
+      case 'estado': {
+        const r = m.corrida;
+        if (!r || !r.id) break;
+        // Una búsqueda que empezó antes de recargar la página: se sigue mostrando (y sus partes se guardan igual)
+        if ((!c || c.cerrada) && m.ejecutando && NOMBRE_MODULO[r.modulo]) { EXT.corrida = Object.assign(nuevaCorrida(r.id, r.modulo), { iniciada: true }); }
+        const x = EXT.corrida;
+        if (!x || x.id !== String(r.id)) break;
+        x.progreso = m.progreso || x.progreso;
+        x.conexion = !!m.conexion;
+        if (r.fin && !x.fin) x.fin = { estado: r.fin.estado || '', error: r.fin.error || '', partes: r.partes };
+        if (r.fin && r.fin.descargado) x.descargado = true;
+        revisarFin(x);
+        pintarCorrida();
+        break;
+      }
+      case 'iniciada':
+        if (c && c.id === String(m.id)) { c.iniciada = true; pintarCorrida(); }
+        break;
+      case 'parte':
+        encolarParte(m);
+        break;
+      case 'terminada':
+        if (c && c.id === String(m.id)) {
+          c.fin = { estado: String(m.estado || ''), error: String(m.error || ''), partes: Number(m.partes) || 0 };
+          revisarFin(c);
+          pintarCorrida();
+        }
+        break;
+      case 'error':
+        if (c && !c.iniciada && (!m.id || c.id === String(m.id))) EXT.corrida = null;
+        avisar(String(m.mensaje || 'La extensión no pudo empezar la búsqueda.'), 'mal');
+        pintarCorrida();
+        pintarAcciones();
+        break;
+      default:
+    }
+  }
+
+  /** «Buscar en SUNAT»: arma la lista del día del módulo y la manda a la pestaña de SUNAT. */
+  async function buscarEnSunat(modulo) {
+    if (!EXT.lista) { avisar('Para buscar desde aquí, instale la extensión «Gestión de Riesgo · SUNAT» en Edge (vea «Descargas»).', 'mal'); return; }
+    if (app.modo !== 'nube') { avisar('Entre con la base para que lo que llegue de SUNAT quede guardado.', 'mal'); return; }
+    if (corridaActiva()) { avisar('Ya hay una búsqueda en curso: espere a que termine o deténgala.', 'mal'); return; }
+    if (!EXT.sunat.conexion) {
+      avisar(EXT.sunat.abierto ? 'SUNAT está abierto, pero todavía no tiene conexión: en la pantalla de consulta de guías, pulse «Buscar» o abra una guía con «Ver», y vuelva a intentarlo.'
+        : 'Abra SUNAT Operaciones en Línea en otra pestaña, entre a la consulta de guías de remisión y pulse «Buscar» una vez. Luego vuelva a intentarlo.', 'mal');
+      return;
+    }
+    let pedido;
+    if (modulo === 'maquinaria') {
+      const r = MAQ.armarPedido();
+      if (!r.busquedas && !r.directas) { avisar(r.yaHechas ? '✓ La lista de hoy ya está completa: todas las búsquedas se hicieron.' : 'No hay seguidos con RUC por buscar hoy.', r.yaHechas ? 'bien' : 'mal'); return; }
+      pedido = r.pedido;
+    } else {
+      const r = armarPedido(false);
+      if (!r.prioridad && !window.confirm('La lista de vigilancia está vacía: las guías no se abrirán por prioridad. ¿Continuar igual?')) return;
+      pedido = r.pedido;
+    }
+    EXT.corrida = nuevaCorrida(nuevoId(), modulo);
+    aExtension({ tipo: 'iniciar', id: EXT.corrida.id, modulo, pedido, opciones: app.entregaExt || ENTREGA_EXT });
+    pintarCorrida();
+    pintarAcciones();
+  }
+  function detenerEnSunat() {
+    const c = EXT.corrida;
+    if (!c || c.fin) return;
+    if (!window.confirm('¿Detener la búsqueda? Lo ya obtenido se guarda y la próxima lista sigue desde ahí.')) return;
+    aExtension({ tipo: 'detener', id: c.id });
+    c.deteniendo = true;
+    pintarCorrida();
+  }
+
+  /** Cada parte se guarda de a una, en orden; si la base falla, no se confirma y la extensión la vuelve a enviar. */
+  function encolarParte(m) {
+    let c = EXT.corrida;
+    const id = String(m.id), n = Number(m.n);
+    if (!c || c.id !== id) {
+      if (c && !c.cerrada && !c.fin) return;   // hay otra búsqueda en curso: esta parte llegará otra vez
+      c = EXT.corrida = Object.assign(nuevaCorrida(id, NOMBRE_MODULO[m.modulo] ? m.modulo : 'envios'), { iniciada: true });
+    }
+    if (c.partes.has(n)) { aExtension({ tipo: 'recibida', id, n }); return; }   // ya guardada: se confirma otra vez
+    if (c.enProceso.has(n)) return;
+    c.enProceso.add(n);
+    EXT.cola = EXT.cola.then(() => guardarParteExt(c, n, m)).catch((e) => console.error(e));
+  }
+  async function guardarParteExt(c, n, m) {
+    try {
+      if (app.modo !== 'nube' || !app.clave) throw new Error('la página no está conectada a la base (vuelva a entrar: la parte llegará otra vez)');
+      const d = JSON.parse(m.json);
+      let r;
+      if (c.modulo === 'maquinaria') {
+        if (!MAQ.cargado()) await MAQ.cargar((t) => avisar(t));
+        r = await MAQ.guardarParte(c, d);
+      } else {
+        r = await guardarParte(c, d);
+        recalcular();
+      }
+      c.partes.add(n);
+      c.guardado = r.resumen;
+      c.error = '';
+      if (m.final) c.finalGuardada = true;
+      aExtension({ tipo: 'recibida', id: c.id, n });
+      revisarFin(c);
+      pintarAcciones();
+      if (typeof pintarKpis === 'function' && app.modulo === 'envios') pintarKpis();
+    } catch (e) {
+      c.error = `No se pudo guardar la parte ${n}: ${e.message}. Se volverá a intentar sola.`;
+    } finally {
+      c.enProceso.delete(n);
+      pintarCorrida();
+    }
+  }
+  /** Terminó la búsqueda y se guardó la última parte: se vuelve a pintar todo y se avisa el resultado. */
+  function revisarFin(c) {
+    if (!c.fin || !c.finalGuardada || c.avisado) return;
+    c.avisado = true;
+    app.ultimaActividad = Date.now();
+    pintarTodo();
+    const g = c.guardado || {};
+    const cuanto = c.modulo === 'maquinaria' ? plural(g.conMaquina || 0, 'guía con maquinaria', 'guías con maquinaria')
+      : `${plural(g.nuevas || 0, 'guía nueva o completada', 'guías nuevas o completadas')} de ${CONFIG.corto}`;
+    const fin = c.fin.estado === 'COMPLETADO' ? 'Búsqueda completa' : c.fin.estado === 'TOPE' ? 'La búsqueda llegó al tope de tiempo' : 'La búsqueda se detuvo antes de terminar';
+    avisar(`${fin}: ${cuanto} (de ${(g.total || 0).toLocaleString('es-PE')} revisadas).${c.fin.estado === 'COMPLETADO' ? '' : ' Pulse «Buscar en SUNAT» otra vez para seguir: lo ya descargado no se repite.'}`,
+      c.fin.estado === 'COMPLETADO' ? 'bien' : 'mal');
+  }
+
+  const minutos = (ms) => { const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000); return `${m} min ${String(s).padStart(2, '0')} s`; };
+  const terminadaExt = (c) => !!(c.fin && c.finalGuardada);
+  const fallidaExt = (c) => !!(c.fin && !c.fin.partes);   // terminó sin entregar nada (por ejemplo, la lista no era válida)
+  /** Recuadro con el avance de la búsqueda (abajo a la derecha, en cualquier pantalla). Se arma una vez y solo cambia su texto. */
+  function pintarCorrida() {
+    let caja = document.getElementById('corrida');
+    if (!caja) {
+      caja = el('div', { id: 'corrida', class: 'corrida tarjeta' },
+        el('div', { class: 'corrida-cab' }, el('b', { class: 'corrida-tit' }), el('span', { class: 'chico corrida-reloj' })),
+        el('div', { class: 'corrida-cuerpo' }),
+        el('div', { class: 'fila-botones' }, el('button', { type: 'button', class: 'btn sec btn-chico corrida-btn', onclick: () => accionCorrida() })));
+      document.body.append(caja);
+    }
+    const c = EXT.corrida;
+    caja.hidden = !c || c.cerrada;
+    if (caja.hidden) return;
+    const P = c.progreso || {};
+    const terminada = terminadaExt(c), fallida = fallidaExt(c);
+    const lineas = [];
+    if (!c.iniciada) lineas.push('Enviando la lista a la pestaña de SUNAT…');
+    else if (!terminada && !fallida) {
+      if (P.esperandoConexion || !c.conexion) lineas.push(el('b', { class: 'corrida-aviso', text: 'SUNAT pide conexión: en la pestaña de SUNAT, pulse «Buscar» o abra una guía con «Ver». La búsqueda sigue sola.' }));
+      else if (c.fin) lineas.push('Guardando lo último que llegó…');
+      else lineas.push(`${FASES_EXT[P.fase] || 'Preparando'}${P.pausado ? ' (en pausa)' : ''}`);
+      if (P.fase === 'busqueda' && P.tareasTotal) lineas.push(`Búsqueda ${P.tareaActual || 0} de ${P.tareasTotal}`);
+      if (P.total) lineas.push(`${(P.procesadas || 0).toLocaleString('es-PE')} de ${P.total.toLocaleString('es-PE')} guías del listado revisadas`);
+      if (P.rellenoHechos) lineas.push(`${P.rellenoHechos.toLocaleString('es-PE')}${P.rellenoTotal ? ` de unas ${P.rellenoTotal.toLocaleString('es-PE')}` : ''} pedidas por número`);
+      if (P.frenos) lineas.push(`SUNAT se saturó ${plural(P.frenos, 'vez', 'veces')}: el ritmo bajó solo`);
+    }
+    const g = c.guardado;
+    if (g) lineas.push(el('span', { class: 'bien-txt', text: c.modulo === 'maquinaria'
+      ? `Guardado: ${plural(g.conMaquina || 0, 'guía con maquinaria', 'guías con maquinaria')} de ${(g.total || 0).toLocaleString('es-PE')} revisadas`
+      : `Guardado: ${plural(g.nuevas || 0, 'guía nueva', 'guías nuevas')} de ${CONFIG.corto} (${(g.total || 0).toLocaleString('es-PE')} revisadas)` }));
+    if (terminada) lineas.push(c.fin.estado === 'COMPLETADO' ? '✓ Completa.' : c.fin.estado === 'TOPE' ? 'Llegó al tope de tiempo: pulse «Buscar en SUNAT» otra vez para seguir.'
+      : `Se detuvo antes de terminar${c.fin.error ? ` (${c.fin.error})` : ''}: pulse «Buscar en SUNAT» otra vez para seguir.`);
+    else if (fallida) lineas.push(el('span', { class: 'mal-txt', text: c.fin.error || 'La búsqueda no empezó.' }));
+    if (c.descargado) lineas.push(el('span', { class: 'mal-txt', text: 'La página no confirmó todo a tiempo: en la pestaña de SUNAT se descargó el JSON completo; cárguelo con «Cargar resultado».' }));
+    if (c.error) lineas.push(el('span', { class: 'mal-txt', text: c.error }));
+    if ((terminada || fallida) && !c.terminadaEn) c.terminadaEn = Date.now();
+    caja.querySelector('.corrida-tit').textContent = `${terminada || fallida ? 'Búsqueda en SUNAT' : 'Buscando en SUNAT'} · ${NOMBRE_MODULO[c.modulo] || ''}`;
+    caja.querySelector('.corrida-reloj').textContent = minutos((c.terminadaEn || Date.now()) - c.inicio);
+    caja.querySelector('.corrida-cuerpo').replaceChildren(...lineas.map((x) => el('div', { class: 'chico' }, x)));
+    const btn = caja.querySelector('.corrida-btn');
+    btn.textContent = terminada || fallida ? 'Cerrar' : c.deteniendo ? 'Deteniendo…' : 'Detener';
+    btn.disabled = !(terminada || fallida) && (!c.iniciada || !!c.deteniendo || !!c.fin);
+  }
+  function accionCorrida() {
+    const c = EXT.corrida;
+    if (!c) return;
+    if (terminadaExt(c) || fallidaExt(c)) { c.cerrada = true; pintarCorrida(); pintarAcciones(); return; }
+    detenerEnSunat();
+  }
+  // El reloj del recuadro avanza aunque no lleguen mensajes
+  setInterval(() => {
+    const c = EXT.corrida, r = document.querySelector('#corrida .corrida-reloj');
+    if (c && !c.cerrada && r) r.textContent = minutos((c.terminadaEn || Date.now()) - c.inicio);
+  }, 1000);
+
+  /** Botón «Buscar en SUNAT» para la barra de acciones de cada módulo (solo si la extensión está instalada). */
+  function botonSunat(modulo) {
+    if (!EXT.lista) return null;
+    const ocupado = corridaActiva();
+    const listo = EXT.sunat.conexion;
+    return el('button', { type: 'button', class: 'btn', disabled: ocupado, onclick: () => buscarEnSunat(modulo),
+      title: listo ? 'Manda la lista del día a la pestaña de SUNAT; lo obtenido se guarda aquí solo, cifrado' : 'Primero abra la consulta de guías en SUNAT y pulse «Buscar» una vez' },
+    el('span', { class: 'punto-sunat', 'data-listo': listo ? 'si' : 'no', 'aria-hidden': 'true' }), ocupado ? 'Buscando en SUNAT…' : 'Buscar en SUNAT');
+  }
+  /** Tarjeta de «Descargas»: si la extensión está instalada, si SUNAT tiene conexión y cómo instalarla. */
+  function tarjetaExtension() {
+    const estado = !EXT.lista ? 'No está instalada en este navegador.'
+      : `✓ Instalada (versión ${EXT.version}). SUNAT: ${EXT.sunat.conexion ? 'con conexión, listo para buscar' : EXT.sunat.abierto ? 'abierto, falta la conexión (en la consulta de guías, pulse «Buscar» una vez)' : 'no está abierto'}.`;
+    return el('div', { class: 'tarjeta' }, el('h3', { text: 'Buscar en SUNAT con la extensión de Edge' }),
+      el('p', { class: EXT.lista ? 'chico bien-txt' : 'chico', text: estado }),
+      el('p', { class: 'chico', text: 'Con la extensión, «Buscar en SUNAT» manda la lista del día a la pestaña de SUNAT y lo obtenido se guarda aquí, cifrado, mientras avanza: no hay que copiar la lista ni cargar archivos. Se usa su propia sesión de SUNAT; la extensión no guarda nada. Envíos y Maquinaria se buscan por separado.' }),
+      EXT.lista ? null : el('ol', { class: 'historial' },
+        el('li', {}, 'Descargue ', el('a', { href: 'extension/gestion-riesgo-sunat.zip', download: '' }, 'la extensión (ZIP)'), ' y descomprímala en una carpeta que no vaya a borrar.'),
+        el('li', { text: 'En Edge, escriba edge://extensions en la barra de direcciones, active «Modo de desarrollador» y pulse «Cargar desempaquetada»: elija esa carpeta.' }),
+        el('li', { text: 'Recargue esta página y la de SUNAT. Arriba aparecerá «Buscar en SUNAT».' })));
+  }
+
   /* ===================== Módulo de maquinaria ===================== */
   const MAQ = (() => {
   /* ---------- Maquinaria: estado y base ---------- */
@@ -6392,7 +6728,8 @@ var qrcode = function() {
     seguidos: new Map(),      // documento → seguido
     cuaderno: null, dams: new Map(), ventas: new Map(), importadores: new Map(), version: 0,
     // Pantalla
-    filtro: { texto: '', estado: '', tipo: '', rol: '' }, abiertas: new Set(), formulario: null, mostrar: 200, diasLista: 1
+    filtro: { texto: '', estado: '', tipo: '', rol: '', nivel: '' }, abiertas: new Set(), formulario: null, mostrar: 200,
+    incluirSemanal: null      // la búsqueda semanal y la revisión inicial: null = solo los lunes; true / false = lo eligió el equipo hoy
   };
   const eventosVivosM = () => {
     const anulados = new Set(M.eventos.filter((e) => e.t === 'anula').map((e) => e.evento));
@@ -6641,7 +6978,8 @@ var qrcode = function() {
     for (const e of d.guias) {
       const g = guiaDe(e);
       if (!g) continue;
-      if (!g.abierta) { control.push([g.clave, g.fecha || '', 'sin_abrir']); continue; }
+      // Sin abrir: listada y no abierta (se pide por número la próxima vez) o, si su emisor no es de maquinaria, solo listada
+      if (!g.abierta) { control.push([g.clave, g.fecha || '', e.estado === 'solo_listado' ? 'solo_listado' : 'sin_abrir']); continue; }
       const bienes = g.bienes.map((b) => b.desc);
       if (maquinasEnBienes(bienes).length || bienes.some(nombraMaquinaConSerie)) { guias.push(compactar(g)); continue; }
       // Guía de transportista que no nombra la máquina pero cita la guía del remitente: se guarda el enlace (hereda sus bienes)
@@ -6659,8 +6997,11 @@ var qrcode = function() {
       archivo: nombre, generado: limpio(d.generadoEn), version: limpio(d.version), estadoFinal: limpio(d.estadoFinal), lista: limpio(p.titulo),
       ventana: p.ventana && p.ventana.desde ? { desde: momento(p.ventana.desde), hasta: momento(p.ventana.hasta) } : null,
       total: d.guias.length, conMaquina: guias.length, enlaces: enlaces.length, pendientes: Number(R['Números que quedaron por pedir'] || 0),
-      // Búsquedas que terminaron bien (quién, como qué, tipos, días y bloques de horas): la lista siguiente no las repite
-      hechas: (Array.isArray(d.busquedas) ? d.busquedas : []).filter((b) => b && b.tipo === 'ok' && !b.incompleta && (b.rucEmisor || b.rucReceptor))
+      soloListadas: d.guias.filter((e) => e && e.estado === 'solo_listado').length,
+      ...(d.parte ? { parte: Number(d.parte) || 0, inicio: limpio(d.inicio) } : {}),
+      // Búsquedas que terminaron bien (quién, como qué, tipos, días y bloques de horas): la lista siguiente no las repite.
+      // De una entrega por partes, solo cuenta la última: en las anteriores, lo listado aún puede estar sin abrir.
+      hechas: (d.parte && !d.final ? [] : Array.isArray(d.busquedas) ? d.busquedas : []).filter((b) => b && b.tipo === 'ok' && !b.incompleta && (b.rucEmisor || b.rucReceptor))
         .map((b) => [b.rucEmisor ? 'E' : 'R', limpio(b.rucEmisor || b.rucReceptor), limpio(b.tipos), limpio(b.desde), limpio(b.hasta), limpio(b.bloques)])
     };
     return { datos: { v: 1, resumen, guias, enlaces }, control: { claves: control } };
@@ -7034,8 +7375,9 @@ var qrcode = function() {
       if (e.t === 'seguido') {
         const doc = docClave(e.doc);
         if (!doc) continue;
-        const p = M.seguidos.get(doc) || { doc, nombre: '', roles: new Set(), nivel: '', nota: '', activo: true, alta: e.en, fuente: e.fuente || '' };
+        const p = M.seguidos.get(doc) || { doc, nombre: '', roles: new Set(), nivel: '', nota: '', frecuencia: '', activo: true, alta: e.en, fuente: e.fuente || '' };
         if (e.nombre) p.nombre = e.nombre;
+        if (e.frecuencia !== undefined) p.frecuencia = e.frecuencia === 'auto' ? '' : e.frecuencia;   // fijada a mano por el equipo
         if (Array.isArray(e.roles)) p.roles = new Set(e.roles);
         else if (e.rol) p.roles.add(e.rol);
         if (e.nivel !== undefined) p.nivel = e.nivel;
@@ -7401,16 +7743,33 @@ var qrcode = function() {
 
   /* ---------- Maquinaria: lista del día para el extractor ---------- */
   // Tenedores: sus guías como remitente y las que reciben (de remitente y de transportista). Transportistas: las guías que emiten.
-  // Importadores: las guías que emiten. La misma ventana fija de 08:00 a 08:00 que en envíos.
+  // Importadores: las guías que emiten. Como destinatario, se listan todas las guías, pero solo se abren las que vienen de un
+  // importador, un transportista o un emisor de guías con maquinaria (las demás quedan solo listadas).
   const BUSQUEDAS_ROL = {
     tenedor: [['rucEmisor', ['09'], 'como remitente'], ['rucReceptor', ['09', '31'], 'como destinatario']],
     transportista: [['rucEmisor', ['31'], 'como transportista']],
     importador: [['rucEmisor', ['09'], 'como remitente']],
     otro: [['rucEmisor', ['09', '31'], 'como emisor'], ['rucReceptor', ['09', '31'], 'como destinatario']]
   };
-  /** ¿Ya hay una descarga completa de maquinaria que cubre la ventana de hoy? */
-  const ventanaCompletaM = (V = ventanaLista(1)) => M.fuentes.some((f) => f.tipo === 'gre' && f.resumen.estadoFinal === 'COMPLETADO' && f.resumen.ventana
-    && f.resumen.ventana.desde <= V.desde && f.resumen.ventana.hasta >= V.hasta && f.resumen.lista && /^Maquinaria/.test(f.resumen.lista));
+  /**
+   * Cada cuánto se busca a cada seguido (lo acordado con el equipo):
+   * - a diario: quienes aparecen en salidas por trabajar y quienes tuvieron una guía con máquina con serie en los últimos 90 días;
+   *   si un día no se corrió la lista, se completa lo que faltó (hasta 7 días atrás);
+   * - los lunes, 7 días: quienes tuvieron su última guía con máquina con serie hace 3 a 6 meses (lo que faltó, hasta 14 días atrás);
+   * - revisión inicial, 90 días: quienes aún no se revisaron, 20 por día (primero los que agregó el equipo);
+   * - en pausa: ya revisados y sin guías con máquina con serie en 6 meses (o nunca), o con máquinas de más de 4 años.
+   *   Siguen en la lista de seguidos y vuelven solos si aparecen en una salida o en una guía con máquina.
+   * El equipo puede fijar la frecuencia de cada seguido a mano.
+   */
+  const FRECUENCIA_M = { activoDias: 90, pausaDias: 183, diarioAtras: 7, semanalAtras: 14, barridoDias: 90, barridoTanda: 20, nuevoDias: 7, diaSemanal: 1, revisadoMin: 60 };
+  const NIVELES_M = {
+    diario: ['A diario', 'e-resultado'],
+    semanal: ['Los lunes', 'e-nota'],
+    barrido: ['Revisión inicial', 'e-no'],
+    pausa: ['En pausa', 'e-cerrado']
+  };
+  /** ¿Hoy toca la búsqueda semanal? (los lunes, o si el equipo lo marca) */
+  const tocaSemanalM = () => (M.incluirSemanal === true || M.incluirSemanal === false ? M.incluirSemanal : new Date().getDay() === FRECUENCIA_M.diaSemanal);
   const diaSiguiente = (d) => isoDia(new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)) + 1));
   /** Lo ya buscado en las descargas guardadas: «E|ruc|09» → día → 'todo' o los bloques de 4 horas consultados. */
   function coberturaM() {
@@ -7435,86 +7794,171 @@ var qrcode = function() {
     }
     return cub;
   }
-  /** Días de la ventana y los bloques de 4 horas que pide cada uno (null = el día entero), como los cuenta el extractor. */
-  function diasVentana(V) {
-    const out = [];
-    for (let d = new Date(V.inicio.getFullYear(), V.inicio.getMonth(), V.inicio.getDate()); d < V.fin; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
-      const dia = isoDia(d);
-      const a = dia === isoDia(V.inicio) ? Math.floor(V.inicio.getHours() / 4) + 1 : 1;
-      const b = dia === isoDia(V.fin) ? Math.min(6, Math.ceil(V.fin.getHours() / 4)) : 6;
-      if (b >= a) out.push([dia, a === 1 && b === 6 ? null : Array.from({ length: b - a + 1 }, (_, i) => a + i)]);
+  /** Primer bloque de 4 horas sin buscar entre «fin − dias» y «fin» (null si todo está buscado). */
+  function primerHuecoM(m, fin, dias) {
+    for (let t = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate() - dias, fin.getHours(), 0); t < fin;
+      t = new Date(t.getFullYear(), t.getMonth(), t.getDate(), t.getHours() + 4, 0)) {
+      const c = m && m.get(isoDia(t));
+      if (c === 'todo' || (c && c.has(Math.floor(t.getHours() / 4) + 1))) continue;
+      return t;
     }
-    return out;
+    return null;
   }
-  function armarPedidoM() {
-    const hoy = new Date();
-    const V = ventanaLista(M.diasLista);
-    const inicio = V.desde;
-    const cub = coberturaM(), dias = diasVentana(V);
-    const hecha = (campo, doc, t) => { const m = cub.get(`${campo === 'rucEmisor' ? 'E' : 'R'}|${doc}|${t}`); return !!m && dias.every(([d, bl]) => { const c = m.get(d); return c === 'todo' || (!!bl && !!c && bl.every((x) => c.has(x))); }); };
-    // Primero quienes tienen máquinas de salidas por trabajar; luego quienes tuvieron guías con maquinaria en los últimos 6 meses
-    const urgentes = new Set(), activos = new Set(), desde6 = isoMomento(diasAtras(183));
-    for (const s of M.salidas) if (s.estado !== 'Descartada') for (const p of [s.mov, s.ten, ...s.recs, s.ubic.rec]) if (p && p.doc) urgentes.add(p.doc);
-    for (const g of M.guias.values()) if (g.maqs.length && (g.fecha || '') >= desde6) for (const d of [g.emisorRuc, g.destinatario && g.destinatario.doc, g.remitente && g.remitente.doc]) if (d) activos.add(d);
-    const rango = (p) => (urgentes.has(p.doc) ? 0 : activos.has(p.doc) ? 1 : 2);
-    const seguidos = [...M.seguidos.values()].filter((p) => p.activo && rucValido(p.doc)).sort((a, b) => rango(a) - rango(b) || (a.nombre || a.doc).localeCompare(b.nombre || b.doc));
-    const busquedas = [], vistas = new Set(), emisores = new Set();
+  /** Una máquina de más de 4 años (por el año de su DAM o, sin DAM, de fabricación) ya no cuenta para seguir a nadie. */
+  function maquinaViejaM(serie, anioHoy) {
+    const m = M.maquinas.get(canonSerie(serie));
+    if (!m) return false;
+    const dam = (m.manual && m.manual.dam) || m.dam || '';
+    const a = /^\d{3}-(\d{4})-/.test(dam) ? Number(dam.slice(4, 8)) : anioNum(m.anio);
+    return a !== null && anioHoy - a >= PLAZO_ANIOS;
+  }
+  /** Frecuencia de cada seguido activo: documento → { nivel, motivo, ultima, revisados, nuevo, urgente }. */
+  let CACHE_FREC = null;
+  function frecuenciasM() {
+    const firma = `${M.version}|${isoDia(new Date())}`;
+    if (CACHE_FREC && CACHE_FREC.firma === firma) return CACHE_FREC.mapa;
+    const hoy = new Date(), anio = hoy.getFullYear();
+    const desdeActivo = isoMomento(diasAtras(FRECUENCIA_M.activoDias)), desdePausa = isoMomento(diasAtras(FRECUENCIA_M.pausaDias));
+    const desdeNuevo = diasAtras(FRECUENCIA_M.nuevoDias).toISOString(), desdeAnio = isoDia(diasAtras(365));
+    const urgentes = new Map();
+    for (const s of M.salidas) if (s.estado !== 'Descartada') for (const p of [s.mov, s.ten, ...s.recs, s.ubic.rec]) if (p && p.doc && !urgentes.has(p.doc)) urgentes.set(p.doc, s.id);
+    // Última guía con máquina con serie (de las que siguen dentro de los 4 años) de cada documento, y quiénes ya tienen guías propias descargadas
+    const ultima = new Map(), propias = new Set();
+    for (const g of M.guias.values()) {
+      if (!g.heredada) propias.add(g.emisorRuc);
+      if (!g.fecha || !g.maqs.some((x) => x.serie && !maquinaViejaM(x.serie, anio))) continue;
+      for (const d of [g.emisorRuc, g.destinatario && g.destinatario.doc, g.remitente && g.remitente.doc]) if (d && (ultima.get(d) || '') < g.fecha) ultima.set(d, g.fecha);
+    }
+    // Días del último año en que ya se buscaron sus guías (con cualquier rol)
+    const revisados = new Map();
+    for (const [k, m] of coberturaM()) {
+      const doc = k.split('|')[1], s = revisados.get(doc) || new Set();
+      for (const d of m.keys()) if (d >= desdeAnio) s.add(d);
+      revisados.set(doc, s);
+    }
+    const mapa = new Map();
+    for (const p of M.seguidos.values()) {
+      if (!p.activo) continue;
+      const u = ultima.get(p.doc) || '', dias = revisados.has(p.doc) ? revisados.get(p.doc).size : 0;
+      const revisado = dias >= FRECUENCIA_M.revisadoMin || propias.has(p.doc);
+      // «Nuevo»: agregado por el equipo en la última semana (los del tablero anterior esperan su tanda de los lunes)
+      const x = { ultima: u, revisados: dias, nuevo: p.fuente !== 'tablero anterior' && (p.alta || '') >= desdeNuevo, urgente: urgentes.get(p.doc) || '' };
+      if (p.frecuencia && NIVELES_M[p.frecuencia]) Object.assign(x, { nivel: p.frecuencia, motivo: 'Elegido por el equipo', manual: true });
+      else if (x.urgente) Object.assign(x, { nivel: 'diario', motivo: `Aparece en la salida ${x.urgente}` });
+      else if (u >= desdeActivo) Object.assign(x, { nivel: 'diario', motivo: `Guía con máquina el ${fechaM(u)}` });
+      else if (!revisado) Object.assign(x, { nivel: 'barrido', motivo: 'Aún no se revisaron sus guías' });
+      else if (u >= desdePausa) Object.assign(x, { nivel: 'semanal', motivo: `Última guía con máquina el ${fechaM(u)}` });
+      else Object.assign(x, { nivel: 'pausa', motivo: u ? `Sin guías con máquina con serie desde el ${fechaM(u)}` : 'Nunca emitió ni recibió una guía con máquina con serie' });
+      mapa.set(p.doc, x);
+    }
+    CACHE_FREC = { firma, mapa };
+    return mapa;
+  }
+  /**
+   * Búsquedas de hoy: quién, como qué y desde cuándo (lo que falta buscar según la frecuencia de cada uno).
+   * Devuelve también cuántos hay en cada frecuencia y cuántas búsquedas ya estaban hechas.
+   */
+  let CACHE_PLAN = null;
+  function planM() {
+    const V = ventanaLista(1), semanal = tocaSemanalM();
+    const firma = `${M.version}|${V.desde}|${semanal}`;
+    if (CACHE_PLAN && CACHE_PLAN.firma === firma) return CACHE_PLAN.plan;
+    const frec = frecuenciasM(), cub = coberturaM();
+    const cuenta = { diario: 0, semanal: 0, barrido: 0, pausa: 0 };
+    for (const x of frec.values()) cuenta[x.nivel]++;
+    // Revisión inicial, 20 por día: primero los recién agregados por el equipo; luego quienes tienen máquinas registradas de los
+    // últimos 4 años, importadores, transportistas y el resto
+    const conMaquina = new Set(), anio = new Date().getFullYear();
+    for (const m of M.maquinas.values()) if (m.tenedor && m.tenedor.doc && !maquinaViejaM(m.serie, anio)) conMaquina.add(m.tenedor.doc);
+    const turno = (p) => (frec.get(p.doc).nuevo ? 0 : conMaquina.has(p.doc) ? 1 : p.roles.has('importador') ? 2 : p.roles.has('transportista') ? 3 : 4);
+    const enBarrido = [...M.seguidos.values()].filter((p) => p.activo && rucValido(p.doc) && frec.get(p.doc) && frec.get(p.doc).nivel === 'barrido')
+      .sort((a, b) => turno(a) - turno(b) || (a.nombre || a.doc).localeCompare(b.nombre || b.doc));
+    const tanda = new Set(enBarrido.slice(0, FRECUENCIA_M.barridoTanda).map((p) => p.doc));
+    const atras = { diario: FRECUENCIA_M.diarioAtras, semanal: semanal ? FRECUENCIA_M.semanalAtras : 0, barrido: FRECUENCIA_M.barridoDias, pausa: 0 };
+    const orden = (p) => { const x = frec.get(p.doc); return x.urgente ? 0 : x.nivel === 'diario' ? 1 : x.nivel === 'semanal' ? 2 : 3; };
+    const seguidos = [...M.seguidos.values()].filter((p) => p.activo && rucValido(p.doc) && frec.get(p.doc))
+      .filter((p) => { const n = frec.get(p.doc).nivel; return n === 'diario' || (n === 'semanal' && semanal) || (n === 'barrido' && tanda.has(p.doc)); })
+      .sort((a, b) => orden(a) - orden(b) || (a.nombre || a.doc).localeCompare(b.nombre || b.doc));
+    const busquedas = [], vistas = new Set(), desdeEmisor = new Map();
     let yaHechas = 0;
     for (const p of seguidos) {
+      const x = frec.get(p.doc), dias = atras[x.nivel];
       for (const rol of p.roles.size ? p.roles : ['tenedor']) {
         for (const [campo, tipos, texto] of BUSQUEDAS_ROL[rol] || BUSQUEDAS_ROL.otro) {
           for (const t of tipos) {
-            const k = `${campo}|${p.doc}|${t}`;
+            const k = `${campo === 'rucEmisor' ? 'E' : 'R'}|${p.doc}|${t}`;
             if (vistas.has(k)) continue;
             vistas.add(k);
-            if (campo === 'rucEmisor') emisores.add(p.doc);
-            if (hecha(campo, p.doc, t)) { yaHechas++; continue; }   // ya se buscó en una descarga anterior (por ejemplo, una que quedó a medias)
-            const b = busquedas.find((x) => x[campo] === p.doc && x.grupo === rol);
-            if (b) { b.tipos.push(t); continue; }
-            busquedas.push({ etiqueta: `${titulo(p.nombre || p.doc)} (${p.doc}) · ${texto}`, grupo: rol, [campo]: p.doc, tipos: [t], desde: V.desde, hasta: V.hasta });
+            const hueco = primerHuecoM(cub.get(k), V.fin, dias);
+            if (!hueco) { yaHechas++; continue; }   // ya se buscó (por ejemplo, en una descarga que quedó a medias)
+            const desde = isoMomento(hueco);
+            if (campo === 'rucEmisor' && (!desdeEmisor.has(p.doc) || desde < desdeEmisor.get(p.doc))) desdeEmisor.set(p.doc, desde);
+            const b = busquedas.find((y) => y[campo] === p.doc && y.grupo === rol);
+            if (b) { b.tipos.push(t); if (desde < b.desde) b.desde = desde; continue; }
+            busquedas.push({ etiqueta: `${titulo(p.nombre || p.doc)} (${p.doc}) · ${texto}`, grupo: rol, nivel: x.nivel, [campo]: p.doc, tipos: [t], desde, hasta: V.hasta,
+              ...(campo === 'rucReceptor' ? { soloEmisores: true } : {}) });
           }
         }
       }
     }
+    const plan = { V, semanal, busquedas, desdeEmisor, yaHechas, seguidos: seguidos.length, cuenta, tanda: tanda.size, enBarrido: enBarrido.length };
+    CACHE_PLAN = { firma, plan };
+    return plan;
+  }
+  /** ¿Ya no queda nada por buscar hoy? */
+  const ventanaCompletaM = () => M.fuentes.some((f) => f.tipo === 'gre') && !planM().busquedas.length;
+  /** Emisores cuyas guías sí se abren cuando el tenedor es destinatario: importadores, transportistas y quienes emitieron guías con maquinaria. */
+  function emisoresFiltroM() {
+    const s = new Set([...M.importadores.keys()].filter(rucValido));
+    for (const p of M.seguidos.values()) if (p.activo && rucValido(p.doc) && (p.roles.has('importador') || p.roles.has('transportista'))) s.add(p.doc);
+    for (const g of M.guias.values()) if (g.maqs.length && !g.heredada && rucValido(g.emisorRuc)) s.add(g.emisorRuc);
+    return [...s];
+  }
+  function armarPedidoM() {
+    const hoy = new Date();
+    const P = planM(), V = P.V;
+    const busquedas = P.busquedas.map(({ nivel, ...b }) => ({ ...b, tipos: [...b.tipos] }));
+    const inicio = busquedas.reduce((m, b) => (b.desde < m ? b.desde : m), V.desde);
     const pedido = {
-      tipo: 'GRE_PEDIDO', version: 1, id: 'maquinaria', titulo: `Maquinaria: guías ${V.texto}`,
+      tipo: 'GRE_PEDIDO', version: 1, id: 'maquinaria', titulo: `Maquinaria: guías hasta el ${fechaHora(V.fin)}${P.semanal ? ' (con la revisión semanal)' : ''}`,
       generado: `${isoDia(hoy)} ${dos(hoy.getHours())}:${dos(hoy.getMinutes())}`,
       busquedas, conocidas: [], ventana: { desde: V.desde, hasta: V.hasta },
       opciones: { topeMin: CONFIG.topeMin, rellenar: true, soloLista: false }
     };
-    // Guías ya abiertas desde el inicio de la ventana (con maquinaria o revisadas sin ella): no se vuelven a abrir
-    const conocidas = new Set(), anclas = new Map();
+    if (busquedas.some((b) => b.soloEmisores)) pedido.emisoresFiltro = emisoresFiltroM();
+    // Guías ya abiertas (con maquinaria o revisadas sin ella): no se vuelven a abrir. Anclas: la última guía conocida de cada serie antes de su búsqueda
+    const conocidas = new Set(), abiertas = new Set(), anclas = new Map();
     const ancla = (ruc, cod, serie, numero, fecha) => {
-      if (!emisores.has(ruc) || !/^[A-Z0-9]{4}$/.test(serie) || !Number.isInteger(numero) || !fecha || fecha >= inicio) return;
+      const desde = P.desdeEmisor.get(ruc);
+      if (!desde || !/^[A-Z0-9]{4}$/.test(serie) || !Number.isInteger(numero) || !fecha || fecha >= desde) return;
       const k = `${ruc}|${cod}|${serie}`, a = anclas.get(k);
       if (!a || numero > a.numero) anclas.set(k, { rucEmisor: ruc, codCpe: cod, serie, numero, fecha });
     };
+    const conocida = (k, f) => { abiertas.add(k); if ((f || '') >= inicio) conocidas.add(k); const [ruc, cod, serie, num] = k.split('-'); ancla(ruc, cod, serie, Number(num), f); };
     for (const f of M.fuentes) {
       if (f.tipo !== 'gre') continue;
-      for (const o of f.datos.guias || []) { const [ruc, cod, serie, num] = o.k.split('-'); if ((o.f || '') >= inicio) conocidas.add(o.k); ancla(ruc, cod, serie, Number(num), o.f); }
-      for (const e of f.datos.enlaces || []) { const [ruc, cod, serie, num] = e.k.split('-'); if ((e.f || '') >= inicio) conocidas.add(e.k); ancla(ruc, cod, serie, Number(num), e.f); }
+      for (const o of f.datos.guias || []) conocida(o.k, o.f);
+      for (const e of f.datos.enlaces || []) conocida(e.k, e.f);
     }
-    for (const [clave, fecha, sinAbrir] of M.control) {
-      const [ruc, cod, serie, num] = clave.split('-');
-      if ((fecha || '') >= inicio && !sinAbrir) conocidas.add(clave);
-      ancla(ruc, cod, serie, Number(num), fecha);
-    }
-    // Guías de la ventana que se listaron pero no se llegaron a abrir: se piden por su número
+    // Control: [clave, fecha] revisada sin maquinaria; [clave, fecha, 'solo_listado'] de un emisor que no se abre; [clave, fecha, 'sin_abrir'] listada y no abierta
+    for (const [clave, fecha, marca] of M.control) if (marca !== 'sin_abrir') conocida(clave, fecha);
+    // Guías que se listaron pero no se llegaron a abrir (la descarga se cortó): se piden por su número
     const directas = new Map();
-    for (const [clave, fecha, sinAbrir] of M.control) {
-      if (!sinAbrir || (fecha || '') < inicio || conocidas.has(clave) || directas.has(clave)) continue;
+    for (const [clave, , marca] of M.control) {
+      if (marca !== 'sin_abrir' || abiertas.has(clave) || directas.has(clave)) continue;
       const [ruc, cod, serie, num] = clave.split('-');
       if (/^[A-Z0-9]{4}$/.test(serie) && /^\d+$/.test(num)) directas.set(clave, { etiqueta: `Guía sin abrir ${serie}-${num}`, grupo: 'pendiente', directa: { rucEmisor: ruc, codCpe: cod, serie, numero: num } });
     }
     pedido.busquedas.push(...directas.values());
     pedido.conocidas = [...conocidas];
     pedido.anclas = [...anclas.values()];
-    return { pedido, busquedas: busquedas.length, directas: directas.size, yaHechas, seguidos: seguidos.length, conocidas: pedido.conocidas.length, ventana: V };
+    return { pedido, busquedas: busquedas.length, directas: directas.size, yaHechas: P.yaHechas, seguidos: P.seguidos, conocidas: pedido.conocidas.length, ventana: V,
+      cuenta: P.cuenta, semanal: P.semanal, tanda: P.tanda, enBarrido: P.enBarrido, inicio };
   }
   async function accionPedidoM(guardar) {
     const r = armarPedidoM();
     if (!r.busquedas && !r.directas) {
-      avisar(r.yaHechas ? '✓ La lista de hoy ya está completa: todas las búsquedas se hicieron.' : 'No hay seguidos con RUC activos: agregue tenedores, transportistas o importadores en «Seguidos».', r.yaHechas ? 'bien' : 'mal');
+      avisar(r.yaHechas ? '✓ La lista de hoy ya está completa: todas las búsquedas se hicieron.' : 'No hay seguidos con RUC por buscar hoy: agregue tenedores, transportistas o importadores en «Seguidos», o revise su frecuencia.', r.yaHechas ? 'bien' : 'mal');
       return;
     }
     const texto = JSON.stringify(r.pedido);
@@ -7831,7 +8275,9 @@ var qrcode = function() {
     const caja = el('div', { class: 'secciones' });
     const enGuias = new Map();
     for (const g of M.guias.values()) for (const d of [g.emisorRuc, g.destinatario && g.destinatario.doc, g.remitente && g.remitente.doc]) if (d) enGuias.set(d, (enGuias.get(d) || 0) + 1);
-    caja.append(barraFiltrosM({ placeholder: 'Buscar RUC, DNI o nombre', selects: [['rol', 'Todos los roles', Object.entries(ROLES_M)], ['estado', 'Activos', [['todos', 'Activos y de baja'], ['baja', 'Solo de baja']]]],
+    const frec = frecuenciasM();
+    caja.append(barraFiltrosM({ placeholder: 'Buscar RUC, DNI o nombre', selects: [['rol', 'Todos los roles', Object.entries(ROLES_M)], ['nivel', 'Toda frecuencia', Object.entries(NIVELES_M).map(([k, [t]]) => [k, t])],
+      ['estado', 'Activos', [['todos', 'Activos y de baja'], ['baja', 'Solo de baja']]]],
       extra: [el('button', { type: 'button', class: 'btn sec', onclick: () => { M.formulario = M.formulario === 'seguido' ? null : 'seguido'; pintarVista(); } }, '＋ Agregar'),
         el('button', { type: 'button', class: 'btn sec', title: 'Excel con una columna RUC o DNI, nombre y rol (tenedor, transportista, importador)', onclick: () => elegirArchivosM() }, 'Importar Excel')] }));
     if (M.formulario === 'seguido') caja.append(formularioSeguido(null));
@@ -7846,13 +8292,19 @@ var qrcode = function() {
     caja.append(conCuerpo(() => {
       const q = norm(M.filtro.texto);
       const lista = [...M.seguidos.values()].filter((p) => (M.filtro.estado === 'todos' ? true : M.filtro.estado === 'baja' ? !p.activo : p.activo)
-        && (!M.filtro.rol || p.roles.has(M.filtro.rol)) && (!q || textoBusca(p.doc, p.nombre, p.nota).includes(q)))
+        && (!M.filtro.rol || p.roles.has(M.filtro.rol)) && (!M.filtro.nivel || (frec.get(p.doc) && frec.get(p.doc).nivel === M.filtro.nivel)) && (!q || textoBusca(p.doc, p.nombre, p.nota).includes(q)))
         .sort((a, b) => (b.activo - a.activo) || (a.nombre || a.doc).localeCompare(b.nombre || b.doc));
-      const cab = ['Documento', 'Nombre', 'Rol', 'Guías con maquinaria', 'Nota', ''];
+      const cab = ['Documento', 'Nombre', 'Rol', 'Búsqueda', 'Guías con maquinaria', 'Nota', ''];
+      const celdaNivel = (p) => {
+        const x = frec.get(p.doc);
+        if (!x) return el('td', { class: 'chico', text: '—' });
+        const [t, cls] = NIVELES_M[x.nivel];
+        return el('td', {}, el('span', { class: `marca ${cls}`, text: t }), el('div', { class: 'chico', text: x.motivo }));
+      };
       const trs = lista.slice(0, M.mostrar).flatMap((p) => filaAbrible(`p:${p.doc}`, [
         el('td', { class: 'mono' }, el('b', { text: p.doc }), rucValido(p.doc) ? null : el('div', { class: 'chico', text: 'sin RUC: no entra en la lista' })),
         el('td', { text: titulo(p.nombre) || '—' }), el('td', {}, ...[...p.roles].map((r) => el('span', { class: 'marca m-otra', text: ROLES_M[r] || r }))),
-        el('td', { class: 'mono', text: String(enGuias.get(p.doc) || 0) }), el('td', { class: 'chico', text: p.nota || '' }),
+        celdaNivel(p), el('td', { class: 'mono', text: String(enGuias.get(p.doc) || 0) }), el('td', { class: 'chico', text: p.nota || '' }),
         el('td', {}, p.activo ? el('span', { class: 'chico', text: 'activo' }) : el('span', { class: 'marca e-cerrado', text: 'de baja' }))
       ], () => fichaSeguido(p), cab.length));
       return el('div', {}, tablaM(cab, trs, M.seguidos.size ? 'Nadie con estas condiciones.' : 'Todavía no sigue a nadie: cargue el paquete inicial o agregue tenedores, transportistas e importadores.'), botonMas(lista.length));
@@ -7864,7 +8316,16 @@ var qrcode = function() {
     const guias = [...M.guias.values()].filter((g) => g.emisorRuc === p.doc || (g.destinatario && g.destinatario.doc === p.doc) || (g.remitente && g.remitente.doc === p.doc))
       .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
     const salidas = M.salidas.filter((s) => [s.mov.doc, s.ten.doc, ...s.recs.map((r) => r.doc)].includes(p.doc));
+    const x = p.activo ? frecuenciasM().get(p.doc) : null;
+    const elegirFrec = x && rucValido(p.doc) ? el('select', { 'aria-label': 'Frecuencia de búsqueda', onchange: (e) => {
+      const v = e.target.value, txt = v === 'auto' ? 'automática' : NIVELES_M[v][0].toLowerCase();
+      accionM(`${titulo(p.nombre || p.doc)}: búsqueda ${txt}.`, { t: 'seguido', doc: p.doc, frecuencia: v });
+    } }, el('option', { value: 'auto', selected: !p.frecuencia }, 'Automática'),
+    ...['diario', 'semanal', 'pausa'].map((k) => el('option', { value: k, selected: p.frecuencia === k }, NIVELES_M[k][0]))) : null;
     caja.append(el('div', { class: 'ficha-lista' },
+      x ? el('div', {}, el('h4', { text: 'Búsqueda en la lista del día' }), el('p', {}, el('span', { class: `marca ${NIVELES_M[x.nivel][1]}`, text: NIVELES_M[x.nivel][0] }), ` ${x.motivo}.`),
+        x.revisados ? el('p', { class: 'chico', text: `Sus guías se buscaron ${plural(x.revisados, 'día', 'días')} en el último año.` }) : null,
+        elegirFrec ? el('label', { class: 'chico' }, 'Frecuencia: ', elegirFrec) : null) : null,
       el('div', {}, el('h4', { text: 'Desde' }), el('p', { text: `${horaLocal(p.alta)}${p.fuente ? ` (${p.fuente})` : ''}` }), p.baja ? el('p', { class: 'chico', text: `De baja desde ${horaLocal(p.baja)}${p.motivoBaja ? `: ${p.motivoBaja}` : ''}` }) : null),
       el('div', {}, el('h4', { text: 'Salidas donde aparece' }), salidas.length ? el('p', { text: salidas.map((s) => `${s.id} (${s.estado.toLowerCase()})`).join(', ') }) : el('p', { class: 'chico', text: 'Ninguna.' })),
       el('div', {}, el('h4', { text: `Últimas guías con maquinaria (${guias.length})` }), guias.length ? el('ul', { class: 'historial' }, ...guias.slice(0, 6).map((g) => el('li', {}, `${fechaM(g.fecha)} · ${numGuiaM(g)} · ${lugarM(g.partida)} → ${lugarM(g.llegada)} `, verGuiaBtn(g)))) : el('p', { class: 'chico', text: 'Ninguna todavía.' })),
@@ -7946,17 +8407,24 @@ var qrcode = function() {
   const NOMBRE_TIPO_M = { gre: 'Guías (extractor)', dam: 'DAM', cpe: 'Comprobantes emitidos', xml: 'Facturas XML', cuaderno: 'Cuaderno de la IA' };
   function vistaDescargasM() {
     const caja = el('div', { class: 'secciones' });
-    const r = armarPedidoM();
-    const selDias = el('select', { 'aria-label': 'Periodo de la lista del día', onchange: (e) => { M.diasLista = Number(e.target.value); pintarAcciones(); pintarVista(); } },
-      ...[1, 2, 3, 4].map((n) => el('option', { value: String(n), selected: (M.diasLista || 1) === n }, `${n === 1 ? 'Un día' : `${n} días`}: ${ventanaLista(n).texto}`)));
+    const r = armarPedidoM(), c = r.cuenta, completa = ventanaCompletaM();
+    const semanal = el('input', { type: 'checkbox', checked: r.semanal, onchange: (e) => { M.incluirSemanal = e.target.checked; pintarAcciones(); pintarVista(); } });
+    const nivel = (k, texto) => el('li', {}, el('span', { class: `marca ${NIVELES_M[k][1]}`, text: `${NIVELES_M[k][0]}: ${c[k]}` }), ` ${texto}`);
     caja.append(el('div', { class: 'tarjeta' }, el('h3', { text: 'Lista del día de maquinaria' }),
-      el('p', { class: 'chico', text: `${plural(r.seguidos, 'seguido con RUC', 'seguidos con RUC')}, ${plural(r.busquedas, 'búsqueda', 'búsquedas')}, guías ${r.ventana.texto} (la ventana no cambia en todo el día), tope de ${CONFIG.topeMin} minutos`
+      el('p', { class: 'chico', text: `Hoy: ${plural(r.busquedas, 'búsqueda', 'búsquedas')} de ${plural(r.seguidos, 'seguido', 'seguidos')}, guías hasta el ${fechaHora(r.ventana.fin)}, tope de ${CONFIG.topeMin} minutos`
         + `${r.yaHechas ? `; ${plural(r.yaHechas, 'búsqueda ya hecha no se repite', 'búsquedas ya hechas no se repiten')}` : ''}${r.directas ? `; ${plural(r.directas, 'guía que quedó sin abrir se pide', 'guías que quedaron sin abrir se piden')} por su número` : ''}`
-        + `${r.conocidas ? `; ${plural(r.conocidas, 'guía ya revisada', 'guías ya revisadas')} no se vuelve${r.conocidas === 1 ? '' : 'n'} a abrir` : ''}. Van primero quienes tienen máquinas de salidas por trabajar.` }),
-      el('p', { class: ventanaCompletaM() ? 'chico bien-txt' : 'chico', text: ventanaCompletaM() ? `✓ La ventana de hoy (${ventanaLista(1).texto}) ya está completa.` : 'Es una lista aparte de la de envíos: se copia desde aquí y su resultado se carga aquí.' }),
-      el('div', { class: 'fila-botones' }, el('label', { class: 'chico' }, 'Periodo: ', selDias)),
+        + `${r.conocidas ? `; ${plural(r.conocidas, 'guía ya revisada', 'guías ya revisadas')} no se vuelve${r.conocidas === 1 ? '' : 'n'} a abrir` : ''}.` }),
+      el('ul', { class: 'historial niveles-m' },
+        nivel('diario', 'Aparecen en salidas por trabajar o tuvieron una guía con máquina con serie en los últimos 90 días. Si un día no se corrió la lista, se completa lo que faltó (hasta 7 días).'),
+        nivel('semanal', 'Su última guía con máquina fue hace 3 a 6 meses: los lunes se buscan sus últimos 7 días.'),
+        nivel('barrido', `Aún no se revisaron sus guías: se buscan sus últimos 90 días, ${FRECUENCIA_M.barridoTanda} por día (primero los que agregue el equipo).${c.barrido ? ` Hoy entran ${r.tanda}.` : ''}`),
+        nivel('pausa', 'Sin guías con máquina con serie en 6 meses (o nunca): no se buscan, pero siguen en «Seguidos» y vuelven solos si aparecen en una salida o en una guía con máquina.')),
+      el('p', { class: 'chico', text: 'Como destinatario, se listan todas sus guías, pero solo se abren las que vienen de importadores, transportistas o emisores de guías con maquinaria. En «Seguidos» puede fijar la frecuencia de cada uno.' }),
+      el('label', { class: 'interruptor' }, semanal, 'Incluir hoy la búsqueda de los lunes'),
+      el('p', { class: completa ? 'chico bien-txt' : 'chico', text: completa ? '✓ La lista de hoy ya está completa.' : 'Es una lista aparte de la de envíos: se copia desde aquí y su resultado se carga aquí.' }),
       el('div', { class: 'fila-botones' }, el('button', { type: 'button', class: 'btn', onclick: () => accionPedidoM(false) }, 'Copiar lista del día'),
         el('button', { type: 'button', class: 'btn sec', onclick: () => accionPedidoM(true) }, 'Guardar como archivo'))));
+    caja.append(tarjetaExtension());
     caja.append(el('div', { class: 'tarjeta' }, el('h3', { text: 'Cargar archivos' }),
       el('ul', { class: 'historial' },
         el('li', { text: 'Resultado del extractor (JSON): se guardan solo las guías con maquinaria.' }),
@@ -8139,13 +8607,49 @@ var qrcode = function() {
     } catch (e) { avisar(`No se pudo quitar: ${e.message}`, 'mal'); }
   }
 
+  /**
+   * Una parte de una búsqueda hecha con la extensión: se suma a lo ya recibido de esa búsqueda y su descarga (una sola fila)
+   * se vuelve a guardar completa, cifrada. Si la base falla, nada cambia y la extensión vuelve a enviar la parte.
+   */
+  async function guardarParteM(c, d) {
+    const emisoresMaq = new Set([...M.guias.values()].filter((g) => g.maqs.length).map((g) => g.emisorRuc));
+    const r = leerGuiasM(c.nombre, d, (c09, ruc) => M.guias.has(c09) || emisoresMaq.has(ruc) || !!(M.seguidos.get(ruc) && M.seguidos.get(ruc).activo));
+    const A0 = c.acum || { guias: new Map(), enlaces: new Map(), claves: new Map(), total: 0, soloListadas: 0, hechas: [] };
+    const A = { ...A0, guias: new Map(A0.guias), enlaces: new Map(A0.enlaces), claves: new Map(A0.claves) };
+    for (const o of r.datos.guias) A.guias.set(o.k, o);
+    for (const e of r.datos.enlaces) A.enlaces.set(e.k, e);
+    for (const x of r.control.claves) A.claves.set(x[0], x);
+    A.total += r.datos.resumen.total;
+    A.soloListadas += r.datos.resumen.soloListadas || 0;
+    if (r.datos.resumen.hechas.length) A.hechas = r.datos.resumen.hechas;   // solo la última parte trae las búsquedas terminadas
+    const resumen = { ...r.datos.resumen, archivo: c.nombre, total: A.total, conMaquina: A.guias.size, enlaces: A.enlaces.size, soloListadas: A.soloListadas, hechas: A.hechas, extension: true };
+    const datos = { v: 1, resumen, guias: [...A.guias.values()], enlaces: [...A.enlaces.values()] };
+    const control = { claves: [...A.claves.values()] };
+    const id = c.filaId || nuevoId(), dia = c.dia || isoDia(new Date());
+    let creado = c.creado || new Date().toISOString();
+    if (app.modo === 'nube') {
+      const cambios = { datos: await cifrar(datos, 'descargas'), control: await cifrar(control, 'control') };
+      if (!c.filaId) {
+        const [x] = await agregarFilas('descargas', [{ id, dia, modulo: MODULO, tipo: 'gre', ...cambios }], 'id,creado');
+        if (x && x.creado) creado = x.creado;
+      } else await cambiarFilas('descargas', `id=eq.${id}`, cambios);
+    }
+    Object.assign(c, { acum: A, filaId: id, dia, creado });
+    const f = { id, tipo: 'gre', dia, creado, resumen, datos, control };
+    const i = M.fuentes.findIndex((x) => x.id === id);
+    if (i >= 0) M.fuentes[i] = f; else M.fuentes.push(f);
+    recalcularM();
+    return { resumen, nuevas: r.datos.guias.length };
+  }
+
   /* ----- Lo que se pinta en el sitio ----- */
   function pintarAccionesM(caja) {
     const u = M.fuentes.filter((f) => f.tipo === 'gre').slice(-1)[0];
-    caja.append(el('div', { class: 'fila-botones' },
-      el('button', { type: 'button', class: 'btn sec', onclick: () => accionPedidoM(false), title: 'Copia la lista de maquinaria para pegarla en el extractor de SUNAT' }, el('span', { class: 'num', text: '1' }), 'Copiar lista del día'),
-      el('button', { type: 'button', class: 'btn', onclick: () => elegirArchivosM(), title: 'Resultado del extractor, DAM, facturas, cuaderno o Excel (o arrástrelos a la página)' }, el('span', { class: 'num', text: '2' }), 'Cargar archivos')),
-    el('span', { class: 'chico', text: ventanaCompletaM() ? `✓ Lista del día completa (${ventanaLista(1).texto})` : u ? `Última descarga: ${horaLocal(u.creado)} · ${plural(u.resumen.conMaquina || 0, 'guía con maquinaria', 'guías con maquinaria')}` : 'Todavía no hay descargas de maquinaria' }));
+    const conExt = botonSunat('maquinaria');
+    caja.append(el('div', { class: 'fila-botones' }, conExt,
+      el('button', { type: 'button', class: 'btn sec', onclick: () => accionPedidoM(false), title: 'Copia la lista de maquinaria para pegarla en el extractor de SUNAT' }, conExt ? null : el('span', { class: 'num', text: '1' }), 'Copiar lista del día'),
+      el('button', { type: 'button', class: conExt ? 'btn sec' : 'btn', onclick: () => elegirArchivosM(), title: 'Resultado del extractor, DAM, facturas, cuaderno o Excel (o arrástrelos a la página)' }, conExt ? null : el('span', { class: 'num', text: '2' }), 'Cargar archivos')),
+    el('span', { class: 'chico', text: ventanaCompletaM() ? `✓ Lista del día completa (guías hasta el ${fechaHora(ventanaLista(1).fin)})` : u ? `Última descarga: ${horaLocal(u.creado)} · ${plural(u.resumen.conMaquina || 0, 'guía con maquinaria', 'guías con maquinaria')}` : 'Todavía no hay descargas de maquinaria' }));
   }
   function pintarVistaM() {
     const vivas = M.salidas.filter((s) => s.estado !== 'Descartada' && s.estado !== 'Regresó a la ZTE').length;
@@ -8173,6 +8677,9 @@ var qrcode = function() {
     pintarAcciones: pintarAccionesM,
     cargarArchivos: cargarArchivosM,
     cargarPaquete,
+    // Para la extensión de Edge: la lista del día y cada parte de lo que llega de SUNAT
+    armarPedido: armarPedidoM,
+    guardarParte: guardarParteM,
     // Para las pruebas y para armar el paquete inicial con los mismos lectores de la página
     lectores: { leerGuiasM, leerDamCsv, leerCpe, ventasDeMaquinaria, xmlsDeArchivo, leerFacturasXml, leerCuaderno, leerExcelM, textoArchivo, leerXlsx },
     estado: () => M,
@@ -8259,9 +8766,10 @@ var qrcode = function() {
     if (app.modulo === 'maquinaria') { MAQ.pintarAcciones(caja); return; }
     const u = app.descargas[0];
     const archivo = el('input', { type: 'file', accept: '.json,.xlsx,.csv', multiple: true, hidden: true, onchange: (e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) cargarResultados(f); } });
-    caja.append(el('div', { class: 'fila-botones' },
-      el('button', { type: 'button', class: 'btn sec', onclick: () => accionPedido(false, false), title: 'Copia la lista para pegarla en el extractor de SUNAT' }, el('span', { class: 'num', text: '1' }), 'Copiar lista del día'),
-      el('button', { type: 'button', class: 'btn', onclick: () => archivo.click(), title: 'Elija el JSON que descargó el extractor (o arrástrelo a la página)' }, el('span', { class: 'num', text: '2' }), 'Cargar resultado'), archivo),
+    const conExt = botonSunat('envios');
+    caja.append(el('div', { class: 'fila-botones' }, conExt,
+      el('button', { type: 'button', class: 'btn sec', onclick: () => accionPedido(false, false), title: 'Copia la lista para pegarla en el extractor de SUNAT' }, conExt ? null : el('span', { class: 'num', text: '1' }), 'Copiar lista del día'),
+      el('button', { type: 'button', class: conExt ? 'btn sec' : 'btn', onclick: () => archivo.click(), title: 'Elija el JSON que descargó el extractor (o arrástrelo a la página)' }, conExt ? null : el('span', { class: 'num', text: '2' }), 'Cargar resultado'), archivo),
     el('span', { class: 'chico', text: ventanaCompleta() ? `✓ Lista del día completa (${ventanaLista(1).texto})`
       : u ? `Última descarga: ${corta(momento(u.resumen.generado))} · ${plural(u.resumen.propias || 0, 'guía', 'guías')}${u.resumen.estadoFinal === 'COMPLETADO' ? ' · completa' : u.resumen.estadoFinal ? ` · ${u.resumen.estadoFinal === 'TOPE' ? 'llegó al tope' : 'a medias'}` : ''} · lista ${ventanaLista().texto}` : `Lista del día: ${ventanaLista().texto}` }));
   }
@@ -8424,12 +8932,13 @@ var qrcode = function() {
       mostrarPrincipal();
     });
   }
-  // Si nadie usa la página por 30 minutos, se cierra (la clave de cifrado y los datos se borran de la memoria)
+  // Si nadie usa la página por 30 minutos, se cierra (la clave de cifrado y los datos se borran de la memoria).
+  // Mientras llega una búsqueda de la extensión, no: cada parte que llega cuenta como uso.
   (() => {
-    let ultima = Date.now();
-    for (const t of ['pointerdown', 'keydown', 'wheel']) document.addEventListener(t, () => { ultima = Date.now(); }, { passive: true });
+    app.ultimaActividad = Date.now();
+    for (const t of ['pointerdown', 'keydown', 'wheel']) document.addEventListener(t, () => { app.ultimaActividad = Date.now(); }, { passive: true });
     setInterval(async () => {
-      if (app.modo === 'nube' && Date.now() - ultima > 30 * 60000) { await salirNube(); location.reload(); }
+      if (app.modo === 'nube' && !corridaActiva() && Date.now() - app.ultimaActividad > 30 * 60000) { await salirNube(); location.reload(); }
     }, 60000);
   })();
 
