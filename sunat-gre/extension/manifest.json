@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Gestión de Riesgo · SUNAT",
+  "version": "1.0.0",
+  "description": "Corre el extractor de guías en la pantalla de SUNAT y entrega lo obtenido a la página Gestión de Riesgo · IA Tarapoto, sin copiar listas ni cargar archivos.",
+  "minimum_chrome_version": "111",
+  "background": { "service_worker": "fondo.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://intranet.sunat.peru/*"],
+      "js": ["arranque.js", "extractor-gre.js", "puente_sunat_main.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://intranet.sunat.peru/*"],
+      "js": ["puente_sunat.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://ia-tarapotodev.github.io/*"],
+      "js": ["puente_pagina.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": { "16": "icono16.png", "48": "icono48.png", "128": "icono128.png" }
+}

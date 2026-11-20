@@ -5,7 +5,31 @@ Script para la consola de Microsoft Edge que descarga, dentro de su propia sesi�
 - Archivo: [`extractor-gre.js`](extractor-gre.js) (versión 3.5.0).
 - Usa solo la consulta autorizada de la pantalla de guías de SUNAT, con la sesión de quien lo ejecuta. No evade controles ni guarda la conexión.
 
-## Dónde se ejecuta
+## Con la extensión de Edge (recomendado)
+
+La extensión **«Gestión de Riesgo · SUNAT»** ([carpeta `extension/`](extension/)) trae este mismo extractor y lo une con la página: ya no hay que pegar el script, copiar la lista ni cargar el JSON.
+
+**Instalar (una sola vez):**
+1. En la página, «Descargas» → «la extensión (ZIP)», o arme el ZIP con `python3 armar_extension.py`. Descomprímalo en una carpeta que no vaya a borrar.
+2. En Edge, escriba `edge://extensions`, active **«Modo de desarrollador»** y pulse **«Cargar desempaquetada»**: elija la carpeta `gestion-riesgo-sunat`.
+3. Recargue la página y la pantalla de SUNAT.
+
+**Cada día:**
+1. Entre a SUNAT Operaciones en Línea, abra la **consulta de guías de remisión** y pulse **«Buscar»** una vez (sin datos): así la extensión toma la conexión de la propia pantalla.
+2. En la página, en el módulo que toque (Envíos o Maquinaria, por separado), pulse **«Buscar en SUNAT»** (con el punto verde: SUNAT tiene conexión).
+3. En la pestaña de SUNAT aparece el panel del extractor; en la página, un recuadro con el avance. Lo obtenido se guarda en la página, **cifrado, cada 2 minutos**, en una sola descarga por búsqueda.
+4. Si SUNAT pide conexión a mitad de camino (vence en una hora), el recuadro lo avisa: en la pestaña de SUNAT, pulse «Buscar» o abra una guía con «Ver», y sigue sola.
+5. Si se corta o la detiene, pulse «Buscar en SUNAT» otra vez: solo pide lo que falta.
+
+**Qué hace y qué no:**
+- Solo funciona en `https://intranet.sunat.peru` (la pantalla de guías) y en la página `https://ia-tarapotodev.github.io`. No pide permisos especiales.
+- La conexión de SUNAT queda en la memoria de la pestaña de SUNAT: nunca llega a la página, no se muestra ni se guarda.
+- No guarda nada: solo pasa mensajes entre las dos pestañas. Cada parte queda en la memoria de la pestaña de SUNAT hasta que la página confirma que la guardó; si la página no la confirma (por ejemplo, se cerró), la vuelve a enviar y, al final, descarga el JSON completo para cargarlo a mano.
+- Mientras llega una búsqueda, la página no se cierra sola por inactividad.
+
+**Al actualizar el extractor:** `python3 armar_extension.py` copia `extractor-gre.js` a `extension/` y arma el ZIP; en Edge, pulse «Volver a cargar» en la extensión (o cargue la carpeta nueva).
+
+## Dónde se ejecuta (sin la extensión)
 
 1. Ingrese a SUNAT Operaciones en Línea y abra la pantalla de **consulta de guías de remisión**.
 2. Pulse **F12** y vaya a la pestaña **Console**.

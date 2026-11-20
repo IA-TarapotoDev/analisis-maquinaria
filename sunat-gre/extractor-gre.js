@@ -558,9 +558,11 @@
    * 4. Mensajes (consola + panel). Sin datos personales.
    *    Nivel «debug»: solo en la consola (detalles técnicos).
    * ------------------------------------------------------------- */
+  let ultimoError = '';   // el último error mostrado (la extensión lo pasa a la página)
   function log(mensaje, nivel = 'info') {
     const fn = { info: console.log, ok: console.log, warn: console.warn, error: console.error, debug: console.log }[nivel] || console.log;
     fn.call(console, '%c[GRE]', 'color:#0a7d55;font-weight:bold', mensaje);
+    if (nivel === 'error') ultimoError = String(mensaje);
     if (nivel === 'debug' || !ui || !ui.log) return;
     const linea = h('div', { class: 'l-' + nivel, text: `[${fechaHoraLocal().slice(11)}] ${mensaje}` });
     ui.log.append(linea);
@@ -767,6 +769,8 @@
       simultaneas: entero(elegir('simultaneas'), 'Consultas a la vez', 1, 4, D.simultaneas),
       // Entregas por partes (la extensión las pasa a la página, que las guarda al instante)
       alEntregar: typeof op.alEntregar === 'function' ? op.alEntregar : null,
+      entregaCadaMs: entero(op.entregaCadaMs, 'Entrega cada (ms)', 5000, 3600000, 60000),
+      entregaCadaGuias: entero(op.entregaCadaGuias, 'Entrega cada (guías)', 10, 100000, 150),
       numSerie: limpio(op.numSerie ?? op.serie).toUpperCase(),
       numCpe: limpio(op.numCpe ?? op.numero),
       codEstado: limpio(op.codEstado),
@@ -2162,6 +2166,7 @@
       return null;
     }
     estado.ejecutando = true;
+    ultimoError = '';
     let iniciado = false;
     const ctx = { token: null, tokenExp: null, cabecerasExtra: {}, signal: null, cfg: null, solicitudes: 0, ritmo: { factor: 1, exitos: 0 }, erroresSeguidos: 0 };
 
@@ -2864,20 +2869,21 @@
    * Entregas por partes (con la extensión): cada minuto, o cada 150 guías, lo terminado desde la entrega anterior va a la
    * página en el mismo formato del JSON; la página lo guarda al instante. La última entrega lleva el estado final y el resumen.
    */
-  const ENTREGA_CADA_MS = 60000, ENTREGA_CADA_GUIAS = 150;
+
   const terminado = (r) => r.procesada || r.fueraDestino || r.ok || r.noExiste || r.soloListado || r.origen === 'conocida';
   function entregarSiToca() {
     const cfg = estado.config;
     if (!cfg || !cfg.alEntregar) return;
     const P = estado.progreso, hechas = (P.procesadas || 0) + (P.rellenoHechos || 0);
-    if (Date.now() - estado.ultimaEntrega < ENTREGA_CADA_MS && hechas - (estado.hechasEntregadas || 0) < ENTREGA_CADA_GUIAS) return;
+    if (Date.now() - estado.ultimaEntrega < cfg.entregaCadaMs && hechas - (estado.hechasEntregadas || 0) < cfg.entregaCadaGuias) return;
     estado.hechasEntregadas = hechas;
     entregarParcial(false);
   }
   function entregarParcial(final) {
     const cfg = estado.config;
     if (!cfg || !cfg.alEntregar) return;
-    const regs = [...estado.resultados.values()].filter((r) => terminado(r) && !estado.entregados.has(r.clave));
+    // La última parte lleva también las guías listadas que no se llegaron a abrir (la página las pide por número la próxima vez)
+    const regs = [...estado.resultados.values()].filter((r) => (final || terminado(r)) && !estado.entregados.has(r.clave));
     estado.ultimaEntrega = Date.now();
     if (!regs.length && !final) return;
     for (const r of regs) estado.entregados.add(r.clave);
@@ -4125,6 +4131,7 @@
       return { ...estado.progreso, fase: estado.fase, pausado: estado.pausado, esperandoConexion: estado.esperandoConexion, estado: estado.motivoFin };
     },
     get hayTokenCapturado() { return !!tokenCapturado; },
+    get ultimoError() { return ultimoError; },
     get hayLista() { return !!estado.pedido; },
     get filtrosCapturados() { return filtrosCapturados ? { ...filtrosCapturados } : null; },
     get busquedaCapturada() { return urlsCapturadas.listado || null; }, // solo la dirección, sin token

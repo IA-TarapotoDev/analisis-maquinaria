@@ -1,6 +1,8 @@
 # Datos con reserva tributaria, salidas generadas y claves: nunca se versionan
 datos/
 *.json
+# …salvo el manifiesto de la extensión de Edge (no tiene datos)
+!sunat-gre/extension/manifest.json
 *.xlsx
 *.xlsm
 *.xls
