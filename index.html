@@ -3220,7 +3220,7 @@ var qrcode = function() {
     categorias: [], senales: [], version: 0,       // listas vigentes y señales de la carga (se arman en recalcular)
     diasLista: 1,            // días que cubre la lista del día (más de uno solo tras un fin de semana o feriado; no se recuerda)
     abiertas: new Set(), mostrar: 200, verOtras: false, enfocar: null, formulario: null, importacion: null, verBajas: false,
-    actas: null, mapaModo: 'envios', filtroActas: { anio: '', rubro: '', medida: 'n' }
+    actas: null, mapaModo: 'envios', filtroActas: { anio: '', rubro: '', puesto: '', medida: 'n' }
   };
 
   /* ---------- Cifrado (en esta computadora) ---------- */
@@ -4921,27 +4921,37 @@ var qrcode = function() {
     return `${plural(lista.length, 'acta de intervención', 'actas de intervención')}: la última el ${fechaCorta(u.f) || 'sin fecha'} (${rubroTxt(u.r)}${u.l ? `, en ${u.l}` : ''}${lista[0].rol !== 'empresa' ? `, como ${lista[0].rol}` : ''})`;
   }
   /** Puntos del mapa de calor: actas por distrito de la intervención, con el año y el rubro elegidos. */
+  // Puestos de control: el código de la columna PUESTO_CONTROL. Los que tienen un lugar propio (el aeropuerto) van en su propio punto:
+  // sus actas traen el distrito de Tarapoto y, si no, se perderían dentro del círculo de la ciudad
+  const PUESTOS = { '0202': { nombre: 'Aeropuerto de Tarapoto', lat: -6.5087, lon: -76.3733 } };
+  const puestoDe = (a) => { const d = digitos(a.pc); return d ? d.padStart(4, '0') : ''; };
+  const nombrePuesto = (c) => (PUESTOS[c] ? `${c} · ${PUESTOS[c].nombre}` : c ? `Puesto ${c}` : 'Sin puesto');
   function puntosActas(filtro) {
     const por = new Map();
     let fuera = 0, total = 0, valor = 0;
-    const destinos = new Map(), origenes = new Map(), rubros = new Map();
+    const destinos = new Map(), origenes = new Map(), rubros = new Map(), puestos = new Map();
     for (const a of (app.actas && app.actas.actas) || []) {
       if (filtro.anio && a.f.slice(0, 4) !== filtro.anio) continue;
       if (filtro.rubro && a.r !== filtro.rubro) continue;
+      const pc = puestoDe(a);
+      if (filtro.puesto && pc !== filtro.puesto) continue;
       total++; valor += a.v;
       const suma = (m, k) => { if (k && !/^(N\/A|-|NO SE SABE|S\/INFORMACION|SIN INFORMACION)$/.test(k)) m.set(k, (m.get(k) || 0) + 1); };
       suma(destinos, a.d); suma(origenes, a.o); suma(rubros, a.r);
-      const t = TIEMPOS[a.u];
-      if (!t) { fuera++; continue; }
-      if (!por.has(a.u)) por.set(a.u, { u: a.u, lat: t[0], lon: t[1], nombre: NOMBRE_CIUDAD.get(a.u) || lugarTxt(t[4]), prov: lugarTxt(t[5]), n: 0, valor: 0, anios: {}, rubros: new Map(), actas: [] });
-      const p = por.get(a.u);
+      const fijo = PUESTOS[pc], t = TIEMPOS[a.u];
+      if (!fijo && !t) { fuera++; continue; }
+      const k = fijo ? `pc:${pc}` : a.u;
+      if (!por.has(k)) por.set(k, fijo ? { u: k, lat: fijo.lat, lon: fijo.lon, nombre: fijo.nombre, prov: t ? lugarTxt(t[5]) : '', n: 0, valor: 0, anios: {}, rubros: new Map(), actas: [] }
+        : { u: a.u, lat: t[0], lon: t[1], nombre: NOMBRE_CIUDAD.get(a.u) || lugarTxt(t[4]), prov: lugarTxt(t[5]), n: 0, valor: 0, anios: {}, rubros: new Map(), actas: [] });
+      const p = por.get(k);
       p.n++; p.valor += a.v;
       p.anios[a.f.slice(0, 4) || 'sin año'] = (p.anios[a.f.slice(0, 4) || 'sin año'] || 0) + 1;
       p.rubros.set(a.r, (p.rubros.get(a.r) || 0) + 1);
       p.actas.push(a);
+      puestos.set(pc, (puestos.get(pc) || 0) + 1);
     }
     const orden = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]);
-    return { puntos: [...por.values()].sort((a, b) => b.n - a.n), fuera, total, valor, destinos: orden(destinos), origenes: orden(origenes), rubros: orden(rubros) };
+    return { puntos: [...por.values()].sort((a, b) => b.n - a.n), fuera, total, valor, destinos: orden(destinos), origenes: orden(origenes), rubros: orden(rubros), puestos: orden(puestos) };
   }
 
   /* ---------- Mapa: la aduana y los puntos de llegada (se dibuja aquí mismo, sin internet) ---------- */
@@ -5427,6 +5437,7 @@ var qrcode = function() {
       el('div', { class: 'filtros' },
         sel('anio', 'Año', [['', 'Todos los años'], ...app.actas.anios.map((a) => [a, a])]),
         sel('rubro', 'Rubro', [['', 'Todos los rubros'], ...app.actas.rubros.map((r) => [r, rubroTxt(r)])]),
+        sel('puesto', 'Puesto de control', [['', 'Todos los puestos'], ...[...new Set(app.actas.actas.map(puestoDe))].sort().map((c) => [c, nombrePuesto(c)])]),
         sel('medida', 'Medida', [['n', 'Número de actas'], ['valor', 'Valor de lo incautado']])),
       el('p', {}, el('b', { text: plural(d.total, 'acta', 'actas') }), el('span', { class: 'chico', text: ` · valor ${valorTxt(d.valor)}${d.fuera ? ` · ${d.fuera} sin distrito en el mapa` : ''}` })));
     const barras = (titulo2, filas, total, clic) => {
@@ -5439,6 +5450,7 @@ var qrcode = function() {
       lado.append(barras('Dónde se intervino', [...d.puntos].sort((a, b) => medidaActas(b) - medidaActas(a)).slice(0, 12).map((p) => [p.u, medidaActas(p), { texto: p.nombre, p }]), d.total,
         (u, x) => { if (!x.p.marcador) return; mapa.lienzo.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); mapa.m.once('moveend', () => x.p.marcador.openPopup()); mapa.m.flyTo([x.p.lat, x.p.lon], Math.max(mapa.m.getZoom(), 10), { duration: 0.8 }); }));
     } else lado.append(el('p', { class: 'vacio', text: 'Ninguna acta con estos filtros.' }));
+    if (d.puestos.length > 1) lado.append(barras('Por puesto de control', d.puestos.map(([c, n]) => [c, n, { texto: nombrePuesto(c) }]), d.total, (c) => { f.puesto = c; pintarVista(); }));
     if (d.rubros.length > 1) lado.append(barras('Qué se incautó', d.rubros.slice(0, 8).map(([r, n]) => [r, n, { texto: rubroTxt(r) }]), d.total, (r) => { f.rubro = r; pintarVista(); }));
     if (d.destinos.length) lado.append(barras('Hacia dónde iba la mercancía', d.destinos.slice(0, 8), d.total));
     if (d.origenes.length) lado.append(barras('De dónde venía', d.origenes.slice(0, 8), d.total));
