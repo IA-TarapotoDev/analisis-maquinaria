@@ -58,7 +58,7 @@ Para no pegarlo cada día, guárdelo una sola vez como *Snippet*: **Sources > Sn
 - **Se frena solo**: si SUNAT responde con saturación (errores 429 o 5xx), se corta la conexión o tarda más de 4 segundos, el extractor duplica las pausas (hasta 4 veces) y pasa a una consulta a la vez; tras 40 respuestas buenas seguidas vuelve al ritmo normal.
 - **Segunda vuelta**: las guías que fallaron por saturación se vuelven a pedir al final, de a una. En la hoja Errores quedan como «RECUPERADA».
 - **Primero lo que más rinde**: si la lista trae cuántas guías de cada serie llegan a la jurisdicción (la página lo calcula con las descargas anteriores), primero se abren las series que más rinden y al final las demás. **No se salta ninguna serie**: solo cambia el orden, así que si la búsqueda se corta, lo que falta es lo de menor rendimiento.
-- **Números que no existen**: al pedir por número, los que SUNAT dice que no existen quedan anotados en el JSON (`no_existe`); la página los recuerda y no los vuelve a pedir.
+- **Números que no existen**: al pedir por número, los que SUNAT dice que no existen quedan anotados en el JSON (`no_existe`). Casi todos son números del final de una serie que todavía no se emitían (existirán después), así que la lista siguiente sí los vuelve a probar.
 - **Solo ciertos emisores**: una búsqueda por destinatario puede pedir que se abran solo las guías de ciertos emisores (por ejemplo, importadores y transportistas de maquinaria); las demás quedan solo listadas (`solo_listado`), sin gastar una consulta por cada una.
 
 ## Casos
