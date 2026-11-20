@@ -620,6 +620,27 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   .punto-sunat { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--mudo); vertical-align: middle; }
   .punto-sunat[data-listo="si"] { background: #3ddc97; box-shadow: 0 0 0 2px rgba(61, 220, 151, .3); }
   @media (max-width: 560px) { .corrida { right: 8px; left: 8px; width: auto; bottom: 8px; } }
+  /* «Guías»: ordenar y filtrar desde los encabezados (como en Excel) */
+  .th-col { display: flex; align-items: center; gap: 2px; }
+  .th-orden { all: unset; cursor: pointer; font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; display: inline-flex; gap: 4px; align-items: center; padding: 2px 0; }
+  .th-orden:hover, .th-orden:focus-visible { color: var(--texto); text-decoration: underline; }
+  .th-flecha { font-size: 10px; color: var(--acento); }
+  .th-filtro { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--mudo); }
+  .th-filtro:hover, .th-filtro:focus-visible { background: var(--gris-suave); color: var(--texto); }
+  .th-filtro.activo { color: var(--acento); background: var(--acento-suave); }
+  th.col-num .th-col { justify-content: flex-end; }
+  td.col-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .menu-col { position: absolute; z-index: 1600; padding: 12px; display: grid; gap: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .2); max-height: min(520px, 80vh); overflow: auto; }
+  .menu-col-orden { display: grid; gap: 6px; }
+  .menu-col-orden .btn { justify-content: flex-start; }
+  .menu-col input[type=search], .menu-col input[type=number] { width: 100%; box-sizing: border-box; }
+  .menu-col label.chico { display: grid; gap: 4px; }
+  .menu-col-rango { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .menu-col-tit { margin: 4px 0 0; font-weight: 600; }
+  .menu-col-lista { display: grid; gap: 2px; max-height: 240px; overflow: auto; border: 1px solid var(--borde); border-radius: 8px; padding: 4px 6px; }
+  .menu-col-op { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 13px; padding: 3px 2px; cursor: pointer; }
+  .menu-col-val { overflow-wrap: anywhere; }
+  .menu-col-todos { font-weight: 600; }
 
 </style>
 </head>
@@ -4815,7 +4836,8 @@ var qrcode = function() {
     return _ubigeoPorNombre.get(norm(nombre)) || '';
   }
   function leerActas(nombre, hojas) {
-    const actas = [], vistos = new Set();
+    // Una fila repetida tal cual se cuenta una vez; el mismo número de acta con otros datos (otra mercancía o destinatario) se guarda aparte
+    const actas = [], vistos = new Map();   // número de acta → firmas de sus filas
     for (const h of hojas) {
       const i = h.filas.findIndex((f) => f.map((x) => norm(x).replace(/[^A-Z_]/g, '')).includes('N_ACTA'));
       if (i < 0) continue;
@@ -4824,9 +4846,13 @@ var qrcode = function() {
       const v = (r, k) => (col[k] >= 0 ? limpio(r[col[k]]) : '');
       const doc = (r, k) => { const d = digitos(v(r, k)); return d.length >= 8 && Number(d) > 0 ? d : ''; };
       for (const r of h.filas.slice(i + 1)) {
-        const n = v(r, 'n');
-        if (!n || vistos.has(n) || /ANULAD/.test(norm(v(r, 'l')))) continue;
-        vistos.add(n);
+        let n = v(r, 'n');
+        if (!n || /ANULAD/.test(norm(v(r, 'l')))) continue;
+        const firma = Object.keys(COLS_ACTAS).map((k) => v(r, k)).join('|');
+        const previas = vistos.get(n) || [];
+        if (previas.includes(firma)) continue;
+        vistos.set(n, [...previas, firma]);
+        if (previas.length) n = `${n} (${previas.length + 1})`;
         let u = digitos(v(r, 'u'));
         u = u.length >= 5 && u.length <= 6 ? u.padStart(6, '0') : '';
         if (!TIEMPOS[u]) u = ubigeoPorNombre(v(r, 'l')) || u;
@@ -4840,9 +4866,20 @@ var qrcode = function() {
     const fechas = actas.map((a) => a.f).filter(Boolean).sort();
     return { v: 1, resumen: { archivo: nombre, actas: actas.length, desde: fechas[0] || '', hasta: fechas[fechas.length - 1] || '', sinLugar: actas.filter((a) => !TIEMPOS[a.u]).length }, actas };
   }
-  /** Guarda las actas (cifradas) y reemplaza las anteriores. */
+  /** Qué cambió respecto de las actas que ya estaban: nuevas, corregidas y las que ya no vienen. */
+  function compararActas(antes, actas) {
+    if (!antes || !antes.actas) return null;
+    const firma = (a) => JSON.stringify([a.f, a.u, a.l, a.p, a.r, a.m, a.v, a.o, a.d, a.pc, a.t, a.e, a.re, a.de]);
+    const previas = new Map(antes.actas.map((a) => [a.n, firma(a)]));
+    let nuevas = 0, corregidas = 0;
+    for (const a of actas) { const p = previas.get(a.n); if (p === undefined) nuevas++; else if (p !== firma(a)) corregidas++; }
+    const ahora = new Set(actas.map((a) => a.n));
+    return { nuevas, corregidas, quitadas: antes.actas.filter((a) => !ahora.has(a.n)).length };
+  }
+  /** Guarda las actas (cifradas) y reemplaza las anteriores (el Excel actualizado manda: trae todas). */
   async function guardarActas(nombre, hojas) {
     const datos = leerActas(nombre, hojas);
+    const cambios = compararActas(app.actas, datos.actas);
     const id = nuevoId(), dia = isoDia(new Date());
     let creado = new Date().toISOString();
     if (app.modo === 'nube') {
@@ -4851,7 +4888,7 @@ var qrcode = function() {
       try { await borrarFilas('descargas', `modulo=eq.envios&tipo=eq.actas&id=neq.${id}`); } catch (_) { /* la más nueva manda igual */ }
     }
     ponerActas({ ...datos, id, creado });
-    return datos.resumen;
+    return { ...datos.resumen, cambios };
   }
   /** Deja las actas listas para el mapa y las fichas (índice por documento). */
   function ponerActas(d) {
@@ -5601,6 +5638,177 @@ var qrcode = function() {
     return f;
   }
 
+  /* ---------- Peso de la guía ---------- */
+  const UNIDAD_PESO = { KGM: [1, 'kg'], TNE: [1000, 't'], GRM: [0.001, 'g'], LBR: [0.4536, 'lb'] };
+  const partesPeso = (peso) => {
+    const m = /^\s*(\d[\d.,]*)\s*([A-Za-z]*)/.exec(String(peso || ''));
+    if (!m) return null;
+    const n = Number(m[1].replace(/,/g, ''));
+    return Number.isFinite(n) ? { n, u: m[2].toUpperCase() } : null;
+  };
+  /** Peso bruto en kilos (para ordenar y filtrar); null si la guía no lo dice. */
+  const pesoKg = (peso) => { const p = partesPeso(peso); return p ? Math.round(p.n * ((UNIDAD_PESO[p.u] || [1])[0]) * 1000) / 1000 : null; };
+  /** Peso como lo escribe la guía: «1 250 kg», «2,5 t». */
+  const textoPeso = (peso) => { const p = partesPeso(peso); return p ? `${p.n.toLocaleString('es-PE', { maximumFractionDigits: 3 })} ${(UNIDAD_PESO[p.u] || [1, p.u.toLowerCase()])[1]}`.trim() : ''; };
+
+  /* ---------- «Guías»: ordenar y filtrar por columna, como los filtros de Excel ---------- */
+  const quienTexto = (r) => {
+    const m = r.marcas.find((x) => x.tipo === 'lista');
+    const p = m ? { nombre: m.nombre || m.nombreLista, doc: m.doc } : r.g.destinatario || r.g.remitente || {};
+    return limpio(p.nombre) || p.doc || '(sin nombre)';
+  };
+  const senalesTexto = (r) => {
+    const v = [...new Set([...r.marcas.map((x) => (x.tipo === 'palabra' ? `La carga dice: ${x.lista}` : nombreLista(x.lista))), r.manual ? 'Marcado a mano' : ''].filter(Boolean))];
+    return v.length ? v : ['(sin señales)'];
+  };
+  const TRAMOS_VIAJE = ['En la ciudad', 'Menos de 1 h', 'De 1 a 3 h', 'De 3 a 6 h', 'Más de 6 h', 'Sin acceso por carretera', '(sin dato)'];
+  const tramoViaje = (r) => {
+    const v = r.sinAbrir ? null : viajeDe(r.g);
+    if (!v) return '(sin dato)';
+    if (v.ciudad) return 'En la ciudad';
+    if (!Number.isFinite(v.min)) return 'Sin acceso por carretera';
+    return v.min < 60 ? 'Menos de 1 h' : v.min < 180 ? 'De 1 a 3 h' : v.min < 360 ? 'De 3 a 6 h' : 'Más de 6 h';
+  };
+  const diaDMY = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v.slice(8, 10)}/${v.slice(5, 7)}/${v.slice(0, 4)}` : v);
+  // orden: el valor para ordenar; valores: lo que se marca en la lista del filtro; texto: búsqueda libre; rango: número (desde / hasta)
+  const COLS_GUIAS = {
+    emitida: { t: 'Emitida', fecha: true, orden: (r) => r.g.fecha || '', valores: (r) => [r.g.fecha ? r.g.fecha.slice(0, 10) : '(sin fecha)'], ver: diaDMY,
+      ordenValores: (a, b) => b.localeCompare(a) },
+    senales: { t: 'Señales', orden: (r) => senalesTexto(r).join(' · '), valores: senalesTexto },
+    quien: { t: 'Quién', orden: (r) => norm(quienTexto(r)), valores: (r) => [quienTexto(r)] },
+    guia: { t: 'Guía', que: 'empresa', orden: (r) => `${norm(r.g.emisorNombre)}|${r.g.serie}|${String(r.g.numero).padStart(10, '0')}`, valores: (r) => [r.g.emisorNombre || '(sin empresa)'],
+      texto: (r) => `${r.g.serie}-${r.g.numero} ${r.g.emisorNombre}` },
+    ruta: { t: 'Ruta', que: 'destino', orden: (r) => norm(`${lugarTxt(r.g.llegada.dist)} ${lugarTxt(r.g.partida.dist)}`), valores: (r) => [lugarTxt(r.g.llegada.dist) || '(sin destino)'],
+      texto: (r) => `${lugarTxt(r.g.partida.dist)} ${lugarTxt(r.g.llegada.dist)}` },
+    viaje: { t: 'Desde la aduana', numero: true, orden: (r) => { const v = r.sinAbrir ? null : viajeDe(r.g); return v && Number.isFinite(v.min) ? v.min : 1e9; }, valores: (r) => [tramoViaje(r)],
+      ordenValores: (a, b) => TRAMOS_VIAJE.indexOf(a) - TRAMOS_VIAJE.indexOf(b) },
+    carga: { t: 'Carga', orden: (r) => norm(r.g.bienes.map((b) => b.desc).join(' ')), texto: (r) => r.g.bienes.map((b) => b.desc).join(' ') },
+    peso: { t: 'Peso', numero: true, orden: (r) => { const k = pesoKg(r.g.peso); return k === null ? -1 : k; }, rango: (r) => pesoKg(r.g.peso), unidad: 'kg' }
+  };
+  const CLAVES_GUIAS = ['emitida', 'senales', 'quien', 'guia', 'ruta', 'viaje', 'carga', 'peso'];
+  /** ¿La fila pasa el filtro de esa columna? */
+  function pasaColumna(r, k) {
+    const c = COLS_GUIAS[k], f = (app.colFiltros || {})[k];
+    if (!c || !f) return true;
+    if (f.sel && c.valores && !c.valores(r).some((v) => f.sel.has(v))) return false;
+    if (f.texto && c.texto && !norm(c.texto(r)).includes(norm(f.texto))) return false;
+    if (c.rango && (f.min !== undefined || f.max !== undefined)) {
+      const x = c.rango(r);
+      if (x === null || (f.min !== undefined && x < f.min) || (f.max !== undefined && x > f.max)) return false;
+    }
+    return true;
+  }
+  /** Las filas de «Guías» con los filtros de columna y el orden elegido. basePara(k): las filas con todos los filtros salvo el de k. */
+  function columnasGuias(filas) {
+    const activos = Object.keys(app.colFiltros || {}).filter((k) => COLS_GUIAS[k]);
+    const pasa = (r, salvo) => activos.every((k) => k === salvo || pasaColumna(r, k));
+    let out = activos.length ? filas.filter((r) => pasa(r, null)) : filas.slice();
+    const o = app.colOrden;
+    if (o && COLS_GUIAS[o.k]) {
+      const c = COLS_GUIAS[o.k];
+      const conClave = out.map((r) => [c.orden(r), r]);
+      conClave.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0) * o.dir || (b[1].g.fecha || '').localeCompare(a[1].g.fecha || ''));
+      out = conClave.map((x) => x[1]);
+    }
+    return { filas: out, activos, basePara: (k) => (activos.length ? filas.filter((r) => pasa(r, k)) : filas) };
+  }
+  function cerrarMenuColumna() {
+    const m = document.querySelector('.menu-col');
+    if (m) { m.remove(); document.removeEventListener('pointerdown', cerrarMenuFuera, true); document.removeEventListener('keydown', cerrarMenuEsc, true); }
+  }
+  function cerrarMenuFuera(e) { const m = document.querySelector('.menu-col'); if (m && !m.contains(e.target) && !e.target.closest('.th-filtro')) cerrarMenuColumna(); }
+  function cerrarMenuEsc(e) { if (e.key === 'Escape') cerrarMenuColumna(); }
+  /** Menú de una columna: ordenar, buscar y marcar los valores que se ven (o un rango, para los números). */
+  function abrirMenuColumna(k, boton, basePara) {
+    const yaAbierto = document.querySelector('.menu-col');
+    cerrarMenuColumna();
+    if (yaAbierto && yaAbierto.dataset.col === k) return;   // segundo clic: se cierra
+    const c = COLS_GUIAS[k], f = (app.colFiltros || {})[k] || {};
+    const aplicar = (nuevo) => {
+      app.colFiltros = { ...(app.colFiltros || {}) };
+      if (nuevo) app.colFiltros[k] = nuevo; else delete app.colFiltros[k];
+      app.mostrar = 200;
+      cerrarMenuColumna();
+      pintarVista();
+    };
+    const ordenar = (dir) => { app.colOrden = { k, dir }; app.mostrar = 200; cerrarMenuColumna(); pintarVista(); };
+    const pop = el('div', { class: 'menu-col tarjeta', role: 'dialog', 'aria-label': `Ordenar y filtrar: ${c.t}`, 'data-col': k });
+    pop.append(el('div', { class: 'menu-col-orden' },
+      el('button', { type: 'button', class: 'btn sec btn-chico', onclick: () => ordenar(1) }, c.fecha ? '↑ Más antiguas primero' : c.numero ? '↑ De menor a mayor' : '↑ De la A a la Z'),
+      el('button', { type: 'button', class: 'btn sec btn-chico', onclick: () => ordenar(-1) }, c.fecha ? '↓ Más recientes primero' : c.numero ? '↓ De mayor a menor' : '↓ De la Z a la A')));
+    const lectores = [];
+    if (c.texto) {
+      const t = el('input', { type: 'search', class: 'menu-col-texto', placeholder: c.que ? 'Contiene… (guía o texto)' : 'Contiene…', value: f.texto || '', 'aria-label': `${c.t} contiene` });
+      pop.append(el('label', { class: 'chico' }, `${c.que ? 'Buscar' : 'Que contenga'}`, t));
+      lectores.push(() => { const v = limpio(t.value); return v ? { texto: v } : {}; });
+    }
+    if (c.rango) {
+      const num = (v) => { const x = Number(String(v).replace(',', '.')); return String(v).trim() !== '' && Number.isFinite(x) ? x : undefined; };
+      const min = el('input', { type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: f.min ?? '', 'aria-label': `${c.t} desde` });
+      const max = el('input', { type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: f.max ?? '', 'aria-label': `${c.t} hasta` });
+      pop.append(el('div', { class: 'menu-col-rango' }, el('label', { class: 'chico' }, `Desde (${c.unidad})`, min), el('label', { class: 'chico' }, `Hasta (${c.unidad})`, max)),
+        el('p', { class: 'chico', text: 'Las guías que no dicen el peso no entran cuando se pone un rango.' }));
+      lectores.push(() => { const a = num(min.value), b = num(max.value); return a === undefined && b === undefined ? {} : { ...(a !== undefined ? { min: a } : {}), ...(b !== undefined ? { max: b } : {}) }; });
+    }
+    if (c.valores) {
+      const cuenta = new Map();
+      for (const r of basePara(k)) for (const v of new Set(c.valores(r))) cuenta.set(v, (cuenta.get(v) || 0) + 1);
+      for (const v of f.sel || []) if (!cuenta.has(v)) cuenta.set(v, 0);   // lo marcado antes sigue a la vista
+      const ver = c.ver || ((v) => v);
+      const vals = [...cuenta.keys()].sort(c.ordenValores || ((a, b) => a.localeCompare(b, 'es')));
+      const sel = new Set(f.sel ? [...f.sel] : vals);
+      const buscar = el('input', { type: 'search', placeholder: 'Buscar en la lista…', 'aria-label': `Buscar valores de ${c.t}` });
+      const todos = el('input', { type: 'checkbox' });
+      const lista = el('div', { class: 'menu-col-lista' });
+      const visibles = () => { const q = norm(buscar.value); return vals.filter((v) => !q || norm(ver(v)).includes(q)); };
+      const pintarLista = () => {
+        const vs = visibles();
+        todos.checked = vs.length > 0 && vs.every((v) => sel.has(v));
+        lista.replaceChildren(...vs.slice(0, 300).map((v) => {
+          const ch = el('input', { type: 'checkbox', checked: sel.has(v) });
+          ch.addEventListener('change', () => { if (ch.checked) sel.add(v); else sel.delete(v); todos.checked = visibles().every((x) => sel.has(x)); });
+          return el('label', { class: 'menu-col-op' }, ch, el('span', { class: 'menu-col-val', text: ver(v) }), el('span', { class: 'chico', text: cuenta.get(v).toLocaleString('es-PE') }));
+        }), vs.length > 300 ? el('div', { class: 'chico', text: `… y ${vs.length - 300} más: escriba para buscar.` }) : null,
+        vs.length ? null : el('div', { class: 'chico', text: 'Nada coincide.' }));
+      };
+      buscar.addEventListener('input', pintarLista);
+      todos.addEventListener('change', () => { for (const v of visibles()) { if (todos.checked) sel.add(v); else sel.delete(v); } pintarLista(); });
+      pop.append(el('p', { class: 'chico menu-col-tit', text: c.que === 'empresa' ? 'Empresas' : c.que === 'destino' ? 'Distrito de llegada' : 'Valores' }), buscar,
+        el('label', { class: 'menu-col-op menu-col-todos' }, todos, el('span', { text: '(Seleccionar todo)' })), lista);
+      pintarLista();
+      lectores.push(() => (vals.every((v) => sel.has(v)) ? {} : { sel: new Set(sel) }));
+    }
+    pop.append(el('div', { class: 'fila-botones' },
+      el('button', { type: 'button', class: 'btn btn-chico', onclick: () => { const nuevo = Object.assign({}, ...lectores.map((l) => l())); aplicar(Object.keys(nuevo).length ? nuevo : null); } }, 'Aplicar'),
+      el('button', { type: 'button', class: 'btn sec btn-chico', disabled: !(app.colFiltros || {})[k], onclick: () => aplicar(null) }, 'Quitar filtro')));
+    document.body.append(pop);
+    const rc = boton.getBoundingClientRect(), ancho = Math.min(300, window.innerWidth - 32);
+    pop.style.width = `${ancho}px`;
+    pop.style.left = `${Math.max(16, Math.min(rc.left, window.innerWidth - ancho - 16)) + window.scrollX}px`;
+    pop.style.top = `${rc.bottom + window.scrollY + 6}px`;
+    document.addEventListener('pointerdown', cerrarMenuFuera, true);
+    document.addEventListener('keydown', cerrarMenuEsc, true);
+    const primero = pop.querySelector('input[type=search], input[type=number]');
+    if (primero) primero.focus();
+  }
+  /** Encabezado de una columna de «Guías»: el nombre ordena (otro clic, al revés) y el embudo abre el filtro. */
+  function thColumna(k, basePara) {
+    const c = COLS_GUIAS[k], o = app.colOrden || {}, activo = !!(app.colFiltros || {})[k];
+    const flecha = o.k === k ? (o.dir > 0 ? '▲' : '▼') : '';
+    const NS = 'http://www.w3.org/2000/svg';
+    const embudo = document.createElementNS(NS, 'svg');
+    for (const [a, v] of Object.entries({ viewBox: '0 0 24 24', width: '14', height: '14', fill: activo ? 'currentColor' : 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) embudo.setAttribute(a, v);
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', 'M3 4h18l-7 8v6l-4 2v-8z');
+    embudo.append(p);
+    return el('th', { 'aria-sort': o.k === k ? (o.dir > 0 ? 'ascending' : 'descending') : null, class: c.numero ? 'col-num' : null },
+      el('div', { class: 'th-col' },
+        el('button', { type: 'button', class: 'th-orden', title: 'Ordenar (otro clic: al revés)', onclick: () => { app.colOrden = { k, dir: o.k === k ? -o.dir : c.fecha || c.numero ? -1 : 1 }; app.mostrar = 200; pintarVista(); } },
+          c.t, flecha ? el('span', { class: 'th-flecha', text: flecha }) : null),
+        el('button', { type: 'button', class: `th-filtro${activo ? ' activo' : ''}`, 'aria-label': `Filtrar ${c.t}`, 'aria-haspopup': 'dialog', title: activo ? 'Filtro aplicado: cambiarlo o quitarlo' : 'Ordenar y filtrar',
+          onclick: (e) => { e.stopPropagation(); abrirMenuColumna(k, e.currentTarget, basePara); } }, embudo)));
+  }
+
   /* ---------- Ficha y tabla de envíos ---------- */
   function ficha(r, columnas) {
     const g = r.g, pl = textoPlazo(r.plazo);
@@ -5649,11 +5857,12 @@ var qrcode = function() {
   /**
    * Tabla de envíos. modo: «hoy» (con plazo y descarte rápido), «seguimiento» (estado y detalle) o «todas».
    */
-  function tablaEnvios(filas, modo, vacio) {
-    if (!filas.length) return el('div', { class: 'tabla-caja' }, el('div', { class: 'vacio', text: vacio || 'No hay envíos con estas condiciones.' }));
+  function tablaEnvios(filas, modo, vacio, opciones = {}) {
+    const columnas = modo === 'todas' && opciones.basePara;   // «Guías»: cada encabezado ordena y filtra
+    if (!filas.length && !columnas) return el('div', { class: 'tabla-caja' }, el('div', { class: 'vacio', text: vacio || 'No hay envíos con estas condiciones.' }));
     const cab = modo === 'hoy' || modo === 'esperando' ? [modo === 'esperando' ? 'Estado' : 'Plazo', 'Por qué', 'Quién', 'Guía', 'Ruta', 'Desde la aduana', '']
       : modo === 'seguimiento' ? ['Estado', 'Cambio', 'Por qué', 'Quién', 'Guía', 'Destino', 'Detalle', '']
-        : ['Emitida', 'Señales', 'Quién', 'Guía', 'Ruta', 'Desde la aduana', 'Carga', ''];
+        : ['Emitida', 'Señales', 'Quién', 'Guía', 'Ruta', 'Desde la aduana', 'Carga', 'Peso', ''];
     const tbody = el('tbody');
     for (const r of filas.slice(0, app.mostrar)) {
       const g = r.g, pl = textoPlazo(r.plazo), abierta = app.abiertas.has(g.clave);
@@ -5674,13 +5883,16 @@ var qrcode = function() {
           el('td', { text: lugarTxt(g.llegada.dist) || '—' }), el('td', { class: 'chico', text: detalleEstado(r) }), el('td', {}, el('div', { class: 'botones-fila' }, ...botonesGuia(r)))];
       } else {
         celdas = [el('td', { class: 'chico', text: corta(g.fecha) }), porQue, quienDe(r), guia, celdaRuta(r), celdaViaje(r),
-          el('td', { class: 'chico', text: g.bienes.map((b) => b.desc).join(' · ').slice(0, 90) }), el('td', {}, el('div', { class: 'botones-fila' }, ...botonesGuia(r)))];
+          el('td', { class: 'chico', text: g.bienes.map((b) => b.desc).join(' · ').slice(0, 90) }), el('td', { class: 'col-num', text: textoPeso(g.peso) || '—' }),
+          el('td', {}, el('div', { class: 'botones-fila' }, ...botonesGuia(r)))];
       }
       tbody.append(el('tr', { class: `fila${abierta ? ' abierta' : ''}`, tabindex: '0', 'aria-expanded': abierta ? 'true' : 'false', onclick: alternar,
         onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alternar(); } } }, ...celdas));
       if (abierta) tbody.append(ficha(r, cab.length));
     }
-    const caja = el('div', { class: 'tabla-caja' }, el('table', {}, el('thead', {}, el('tr', {}, ...cab.map((c) => el('th', { text: c })))), tbody));
+    if (!filas.length) tbody.append(el('tr', {}, el('td', { colspan: String(cab.length), class: 'vacio', text: vacio || 'No hay envíos con estas condiciones.' })));
+    const encabezado = columnas ? cab.map((c, i) => (CLAVES_GUIAS[i] ? thColumna(CLAVES_GUIAS[i], opciones.basePara) : el('th', { text: c }))) : cab.map((c) => el('th', { text: c }));
+    const caja = el('div', { class: 'tabla-caja' }, el('table', {}, el('thead', {}, el('tr', {}, ...encabezado)), tbody));
     const frag = el('div', {}, caja);
     if (filas.length > app.mostrar) frag.append(el('button', { type: 'button', class: 'btn sec mas', onclick: () => { app.mostrar += 200; pintarVista(); } }, `Mostrar más (${(filas.length - app.mostrar).toLocaleString('es-PE')} restantes)`));
     return frag;
@@ -6011,13 +6223,20 @@ var qrcode = function() {
     const conFiltro = filtrar(filas.map((g) => ({ g, marcas: [], manual: false })), { ...app.filtro, lista: '' }).map((x) => x.g)
       .filter((g) => !lista || (lista === 'palabras' ? senalesDe(g).length > 0 : lista.startsWith('palabra:') ? senalesDe(g).some((m) => m.lista === lista.slice(8))
         : lista === 'manual' ? !!(app.seg.get(g.clave) || {}).manual : marcasLista(g).some((m) => m.lista === lista)));
-    const vistas = conFiltro.slice(0, app.mostrar).map(filaDe);
+    // Filtros y orden de los encabezados (como en Excel): sobre lo que deja el periodo y la barra de búsqueda
+    const col = columnasGuias(conFiltro.map(filaDe));
+    app.guiasVista = col.filas;   // «Exportar a Excel» lleva estas guías, tal como se ven
+    const vistas = col.filas.slice(0, app.mostrar);
     const selPeriodo = el('select', { 'aria-label': 'Periodo', disabled: buscando, title: buscando ? 'Al buscar se revisa todo el historial' : '', onchange: (e) => { app.filtro.periodo = e.target.value; app.mostrar = 200; pintarVista(); } },
       ...[['7', 'Últimos 7 días'], ['30', 'Últimos 30 días'], ['90', 'Últimos 3 meses'], ['todo', 'Todo el historial']].map(([k, t]) => el('option', { value: k, selected: app.filtro.periodo === k }, t)));
-    const tabla = tablaEnvios(vistas, 'todas', app.guias.size ? 'No hay guías con estas condiciones.' : 'Todavía no hay guías en el historial.');
-    if (conFiltro.length > app.mostrar) tabla.append(el('button', { type: 'button', class: 'btn sec mas', onclick: () => { app.mostrar += 200; pintarVista(); } }, `Mostrar más (${(conFiltro.length - app.mostrar).toLocaleString('es-PE')} restantes)`));
+    const tabla = tablaEnvios(vistas, 'todas', col.activos.length ? 'Ninguna guía cumple los filtros de las columnas.' : app.guias.size ? 'No hay guías con estas condiciones.' : 'Todavía no hay guías en el historial.', { basePara: col.basePara });
+    if (col.filas.length > app.mostrar) tabla.append(el('button', { type: 'button', class: 'btn sec mas', onclick: () => { app.mostrar += 200; pintarVista(); } }, `Mostrar más (${(col.filas.length - app.mostrar).toLocaleString('es-PE')} restantes)`));
+    const texto = buscando ? `${plural(conFiltro.length, 'guía encontrada', 'guías encontradas')} en todo el historial.` : `${plural(conFiltro.length, 'guía llega', 'guías llegan')} a ${CONFIG.corto}.`;
+    const nombres = col.activos.map((k) => COLS_GUIAS[k].t.toLowerCase());
     return el('div', { class: 'secciones' },
-      el('div', { class: 'fila-botones' }, selPeriodo, el('span', { class: 'chico', text: buscando ? `${plural(conFiltro.length, 'guía encontrada', 'guías encontradas')} en todo el historial.` : `${plural(conFiltro.length, 'guía llega', 'guías llegan')} a ${CONFIG.corto}. Para seguir una guía o registrar un acta, ábrala.` })),
+      el('div', { class: 'fila-botones' }, selPeriodo,
+        el('span', { class: 'chico', text: col.activos.length ? `${texto} Con los filtros de ${nombres.join(', ')}: ${col.filas.length.toLocaleString('es-PE')}.` : `${texto} Para seguir una guía o registrar un acta, ábrala. Clic en un encabezado para ordenar; el embudo filtra, como en Excel.` }),
+        col.activos.length || app.colOrden ? el('button', { type: 'button', class: 'btn sec btn-chico', onclick: () => { app.colFiltros = {}; app.colOrden = null; app.mostrar = 200; pintarVista(); } }, 'Quitar filtros y orden') : null),
       tabla);
   }
 
@@ -6037,18 +6256,27 @@ var qrcode = function() {
       const partes = [];
       const ha = hojasActas(hojas);
       if (ha.length) {
-        const r = await guardarActas(archivo.name, ha);
-        partes.push(`${plural(r.actas, 'acta de intervención', 'actas de intervención')} guardadas (mapa de calor en «Mapa»)`);
+        // El Excel actualizado trae todas las actas: reemplaza a las anteriores y se dice qué cambió
+        const r = await guardarActas(archivo.name, ha), c = r.cambios;
+        const detalle = !c ? '' : c.nuevas || c.corregidas || c.quitadas
+          ? ` (${[c.nuevas && plural(c.nuevas, 'nueva', 'nuevas'), c.corregidas && plural(c.corregidas, 'corregida', 'corregidas'), c.quitadas && plural(c.quitadas, 'ya no viene', 'ya no vienen')].filter(Boolean).join(', ')})`
+          : ' (las mismas de antes)';
+        partes.push(`${plural(r.actas, 'acta de intervención', 'actas de intervención')} guardadas${detalle}; se ven en el mapa de calor («Mapa»)`);
       }
       const resto = hojas.filter((h) => !ha.includes(h) && !/^UBIGEO/.test(norm(h.nombre)));
       const r = resto.length ? leerListaArchivo(resto) : { entradas: [] };
+      let panel = false;
       if (r.entradas.length) {
-        app.importacion = { archivo: archivo.name, ...r, forzar: '' };
-        app.pestana = 'lista';
-        partes.push('revise la lista a importar');
+        // Si el archivo no trae nada nuevo para la lista de vigilancia (el mismo Excel, con otras actas), no hay nada que revisar
+        if (r.entradas.some((e) => estadoImportado(e) !== 'ya')) {
+          app.importacion = { archivo: archivo.name, ...r, forzar: '' };
+          app.pestana = 'lista';
+          partes.push('revise la lista a importar');
+          panel = true;
+        } else partes.push(`la lista de vigilancia no cambia (${plural(r.entradas.length, 'documento ya estaba', 'documentos ya estaban')})`);
       } else if (!ha.length) throw new Error('no encuentro números de documento: la tabla debe tener una columna DNI, RUC, Documento o Número');
       pintarVista();
-      if (avisarError && ha.length) avisar(`${archivo.name}: ${partes.join('; ')}.`, 'bien');   // la lista a importar se ve en su panel
+      if (avisarError && (ha.length || !panel)) avisar(`${archivo.name}: ${partes.join('; ')}.`, 'bien');   // la lista a importar se ve en su panel
       return partes.join('; ');
     } catch (e) {
       if (!avisarError) throw e;
@@ -6056,15 +6284,19 @@ var qrcode = function() {
       return '';
     }
   }
+  /** Cómo entra un documento importado: nuevo, vuelve (estaba de baja), se actualizan sus datos o ya está igual. */
+  function estadoImportado(e) {
+    const ya = app.lista.entradas.get(`${e.doc}|${e.lista}`);
+    const cambia = ya && ya.activa && ['rol', 'nombre', 'nivel', 'nota', 'ultima', 'valor', 'actas', 'intervenciones']
+      .some((c) => e[c] && (typeof e[c] === 'object' ? Object.keys(e[c]).length && JSON.stringify(e[c]) !== JSON.stringify(ya[c] || {}) : String(e[c]) !== String(ya[c] || '')));
+    return cambia ? 'actualiza' : ya && ya.activa ? 'ya' : ya ? 'vuelve' : 'nueva';
+  }
   function panelImportacion() {
     const imp = app.importacion;
     const conLista = (e) => ({ ...e, lista: imp.forzar || e.lista });
     const filas = imp.entradas.map(conLista).map((e) => {
-      const ya = app.lista.entradas.get(`${e.doc}|${e.lista}`);
       const otras = (app.lista.indice.get(e.doc) || []).filter((x) => x.lista !== e.lista).map((x) => nombreLista(x.lista).toLowerCase());
-      const cambia = ya && ya.activa && ['rol', 'nombre', 'nivel', 'nota', 'ultima', 'valor', 'actas', 'intervenciones']
-        .some((c) => e[c] && (typeof e[c] === 'object' ? Object.keys(e[c]).length && JSON.stringify(e[c]) !== JSON.stringify(ya[c] || {}) : String(e[c]) !== String(ya[c] || '')));
-      return { e, estado: cambia ? 'actualiza' : ya && ya.activa ? 'ya' : ya ? 'vuelve' : 'nueva', otras };
+      return { e, estado: estadoImportado(e), otras };
     });
     const agregar = filas.filter((f) => f.estado !== 'ya');
     const nActualiza = filas.filter((f) => f.estado === 'actualiza').length, nNuevas = agregar.length - nActualiza;
@@ -8691,18 +8923,22 @@ var qrcode = function() {
   /* ---------- Exportar a Excel ---------- */
   function exportar() {
     const cab = ['Estado', 'Plazo', 'Vence', 'Desde la aduana', 'Salir antes de', 'Por qué', 'Empresa', 'Guía', 'Emitida', 'Origen', 'Destino', 'Dirección de llegada',
-      'Remitente doc.', 'Remitente', 'Destinatario doc.', 'Destinatario', 'Placa', 'Carga', 'Seguimiento'];
+      'Remitente doc.', 'Remitente', 'Destinatario doc.', 'Destinatario', 'Placa', 'Carga', 'Peso (kg)', 'Seguimiento'];
     const fila = (r) => {
       const g = r.g, pl = textoPlazo(r.plazo), v = r.sinAbrir ? null : viajeDe(g), sal = r.plazo && r.plazo.resta > 0 ? salirAntes(r.plazo, v) : null;
       return [(ESTADOS[r.estado] || ESTADOS.por_revisar).t, r.sinAbrir ? 'Sin abrir' : pl.t, r.plazo ? fechaHora(r.plazo.vence) : '', textoViaje(v), sal ? fechaHora(sal) : '',
         [...r.marcas.map(textoMarca), r.manual ? 'Marcado a mano' : ''].filter(Boolean).join(' | '), g.emisorNombre, `${g.serie}-${g.numero}`, corta(g.fecha),
         lugar(g.partida), lugar(g.llegada), g.llegada.dir || '', g.remitente ? g.remitente.doc : '', g.remitente ? g.remitente.nombre : '',
-        g.destinatario ? g.destinatario.doc : '', g.destinatario ? g.destinatario.nombre : '', g.placas.join(', '), g.bienes.map((b) => b.desc).join(' | '), detalleEstado(r)];
+        g.destinatario ? g.destinatario.doc : '', g.destinatario ? g.destinatario.nombre : '', g.placas.join(', '), g.bienes.map((b) => b.desc).join(' | '),
+        pesoKg(g.peso) ?? '', detalleEstado(r)];
     };
     const lista = [['Documento o placa', 'Tipo', 'Nombre', 'Lista', 'Rol', 'Nivel', 'Intervenciones', 'Detalle de intervenciones', 'Nota', 'En la lista desde', 'Fuente', 'Guías donde aparece'],
       ...[...app.lista.entradas.values()].filter((x) => x.activa).map((x) => [x.doc, esPlaca(x) ? 'Placa' : x.tipo || '', x.nombre || '', nombreLista(x.lista), textoRol(x.rol), x.nivel || '',
         totalIntervenciones(x) || '', Object.entries(x.intervenciones || {}).sort().map(([a, n]) => `${a}: ${n}`).join(' · '), x.nota || '', horaLocal(x.alta), x.fuente || '', guiasDeDoc(x.doc, esPlaca(x)).length])];
+    // En «Guías», también las guías tal como se ven (con los filtros y el orden de los encabezados)
+    const enGuias = app.pestana === 'todas' && app.guiasVista ? [{ nombre: 'Guías', filas: [cab, ...app.guiasVista.map(fila)] }] : [];
     descargar(`envios_${marcaHora()}.xlsx`, crearXlsx([
+      ...enGuias,
       { nombre: 'Por revisar', filas: [cab, ...filtrar([...filasBandeja(), ...filasEsperando()]).map(fila)] },
       { nombre: 'Seguimiento', filas: [cab, ...filtrar(app.importantes.filter((r) => r.s && ultimoEstado(r.s))).map(fila)] },
       { nombre: 'Lista de vigilancia', filas: lista }
